@@ -2,6 +2,7 @@ package ui;
 
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -19,6 +20,7 @@ import javafx.util.Duration;
 import logic.MoveValidator;
 import logic.WallValidator;
 import model.*;
+import bot.BotBrain;
 
 import java.util.List;
 
@@ -56,12 +58,44 @@ public class GameController {
     private String player1Name = "Player 1";
     private String player2Name = "Player 2";
 
+    // --- Bot integration ---
+    // Player 2 can be controlled by the algorithmic bot.
+    // When active, human input is blocked during the bot's turn and
+    // the bot computes its action in a background thread.
+    private boolean player2IsBot = false;
+    private boolean player1IsBot = false; // Bot vs Bot mode
+    private BotBrain botBrain;    // Brain for player 2
+    private BotBrain botBrain1;   // Brain for player 1 (Bot vs Bot mode)
+    private boolean botThinking = false; // True while bot is computing
+
+    // --- Bot vs Bot controls ---
+    private boolean botVsBotPaused = false;
+    private int botVsBotDelayMs = 600; // Delay between moves in ms
+    private Label speedLabel;
+    private Button pauseButton;
+
+    // --- Game generation counter (prevents stale bot actions after restart) ---
+    private int gameGeneration = 0;
+    private Timeline pendingBotDelay; // Track pending bot delay for cancellation
+
     public GameController(Stage stage) {
         this.primaryStage = stage;
 
         showPlayerNameDialog();
 
         gameState = new GameState(player1Name, player2Name);
+
+        // Initialize bots if AI-controlled
+        if (player1IsBot && player2IsBot) {
+            // Bot vs Bot: additive noise (±8 pts) + 3 random opening moves
+            // Creates diverse but high-quality games for ML training
+            botBrain  = new BotBrain(0.0, 3); // Bot B
+            botBrain1 = new BotBrain(0.0, 3); // Bot A
+        } else {
+            if (player2IsBot) {
+                botBrain = new BotBrain(); // Deterministic for Human vs Bot
+            }
+        }
 
         boardView = new BoardView();
         boardView.setController(this);
@@ -80,7 +114,21 @@ public class GameController {
         updateUI();
 
         initializeTimer();
-        startTimer();
+
+        if (player1IsBot && player2IsBot) {
+            // Bot vs Bot: hide timer and start bot 1's turn
+            stopTimer();
+            timerLabel.setText("🤖 Bot vs Bot");
+            timerLabel.setTextFill(Color.web("#9b59b6"));
+            // Use a short delay to let the UI finish rendering
+            Timeline startDelay = new Timeline(new KeyFrame(Duration.millis(500), e -> {
+                triggerBotTurnIfNeeded();
+            }));
+            startDelay.play();
+        } else {
+            startTimer();
+            triggerBotTurnIfNeeded(); // In case player1 is not bot but player2 is (shouldn't happen with current setup)
+        }
     }
 
     private void showPlayerNameDialog() {
@@ -149,6 +197,63 @@ public class GameController {
 
         player2Box.getChildren().addAll(player2Header, player2Field);
 
+        // --- Bot toggle checkbox ---
+        CheckBox botCheckbox = new CheckBox("Player 2 is Bot (AI)");
+        botCheckbox.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+        botCheckbox.setTextFill(Color.web("#e67e22"));
+        botCheckbox.setSelected(player2IsBot);
+        botCheckbox.setStyle("-fx-cursor: hand;");
+
+        // --- Bot vs Bot checkbox ---
+        CheckBox botVsBotCheckbox = new CheckBox("\uD83E\uDD16 Bot vs Bot (watch AI play)");
+        botVsBotCheckbox.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+        botVsBotCheckbox.setTextFill(Color.web("#9b59b6"));
+        botVsBotCheckbox.setSelected(player1IsBot && player2IsBot);
+        botVsBotCheckbox.setStyle("-fx-cursor: hand;");
+
+        // When bot is enabled, auto-fill player 2 name and disable the field
+        botCheckbox.setOnAction(e -> {
+            if (botCheckbox.isSelected()) {
+                player2Field.setText("Bot (AI)");
+                player2Field.setDisable(true);
+            } else {
+                player2Field.setText("Player 2");
+                player2Field.setDisable(false);
+                botVsBotCheckbox.setSelected(false);
+            }
+        });
+
+        botVsBotCheckbox.setOnAction(e -> {
+            if (botVsBotCheckbox.isSelected()) {
+                // Enable both bots
+                botCheckbox.setSelected(true);
+                player1Field.setText("Bot A");
+                player1Field.setDisable(true);
+                player2Field.setText("Bot B");
+                player2Field.setDisable(true);
+            } else {
+                player1Field.setText("Player 1");
+                player1Field.setDisable(false);
+                // Keep player 2 as bot if checkbox is still checked
+                if (!botCheckbox.isSelected()) {
+                    player2Field.setText("Player 2");
+                    player2Field.setDisable(false);
+                }
+            }
+        });
+
+        // Apply initial state if bot was already selected (e.g. on restart)
+        if (player1IsBot && player2IsBot) {
+            botVsBotCheckbox.setSelected(true);
+            player1Field.setText("Bot A");
+            player1Field.setDisable(true);
+            player2Field.setText("Bot B");
+            player2Field.setDisable(true);
+        } else if (player2IsBot) {
+            player2Field.setText("Bot (AI)");
+            player2Field.setDisable(true);
+        }
+
         Button startButton = new Button("Start Game");
         startButton.setFont(Font.font("Arial", FontWeight.BOLD, 16));
         startButton.setPrefSize(200, 45);
@@ -169,6 +274,8 @@ public class GameController {
             String name2 = player2Field.getText().trim();
             player1Name = name1.isEmpty() ? "Player 1" : name1;
             player2Name = name2.isEmpty() ? "Player 2" : name2;
+            player2IsBot = botCheckbox.isSelected() || botVsBotCheckbox.isSelected();
+            player1IsBot = botVsBotCheckbox.isSelected();
             dialog.close();
         });
 
@@ -176,9 +283,9 @@ public class GameController {
         player1Field.setOnAction(e -> player2Field.requestFocus());
 
         mainContainer.getChildren().addAll(titleLabel, subtitleLabel,
-                                           player1Box, player2Box, startButton);
+                                           player1Box, player2Box, botCheckbox, botVsBotCheckbox, startButton);
 
-        Scene dialogScene = new Scene(mainContainer, 350, 350);
+        Scene dialogScene = new Scene(mainContainer, 380, 450);
         dialog.setScene(dialogScene);
         dialog.centerOnScreen();
         dialog.showAndWait();
@@ -310,7 +417,7 @@ public class GameController {
     }
 
     private HBox createBottomPanel() {
-        HBox panel = new HBox(30);
+        HBox panel = new HBox(20);
         panel.setAlignment(Pos.CENTER);
         panel.setPadding(new Insets(20));
         panel.setStyle("-fx-background-color: #2c3e50; -fx-background-radius: 10;");
@@ -337,6 +444,43 @@ public class GameController {
         updateModeButtons();
 
         panel.getChildren().addAll(movePawnButton, placeWallButton, restartButton);
+
+        // Bot vs Bot speed controls
+        if (player1IsBot && player2IsBot) {
+            // Hide move/wall buttons (not needed in bot mode)
+            movePawnButton.setVisible(false);
+            movePawnButton.setManaged(false);
+            placeWallButton.setVisible(false);
+            placeWallButton.setManaged(false);
+
+            Region spacer = new Region();
+            spacer.setPrefWidth(20);
+
+            pauseButton = new Button("⏸ Pause");
+            pauseButton.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+            pauseButton.setPrefSize(120, 50);
+            styleButton(pauseButton, "#9b59b6");
+            pauseButton.setOnAction(e -> toggleBotVsBotPause());
+
+            Button slowerButton = new Button("🐢 Slower");
+            slowerButton.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+            slowerButton.setPrefSize(110, 50);
+            styleButton(slowerButton, "#e67e22");
+            slowerButton.setOnAction(e -> changeBotSpeed(+300));
+
+            Button fasterButton = new Button("⚡ Faster");
+            fasterButton.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+            fasterButton.setPrefSize(110, 50);
+            styleButton(fasterButton, "#2ecc71");
+            fasterButton.setOnAction(e -> changeBotSpeed(-200));
+
+            speedLabel = new Label("Speed: 0.6s");
+            speedLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+            speedLabel.setTextFill(Color.web("#ecf0f1"));
+
+            panel.getChildren().addAll(spacer, pauseButton, slowerButton, fasterButton, speedLabel);
+        }
+
         return panel;
     }
 
@@ -402,6 +546,8 @@ public class GameController {
 
     private void onTimeUp() {
         if (gameState.isGameOver()) return;
+        if (botThinking) return; // Don't timeout while bot is computing
+        if (player1IsBot && player2IsBot) return; // No timeout in bot vs bot
 
         statusLabel.setText(gameState.getCurrentPlayer().getName() + " ran out of time!");
 
@@ -411,12 +557,14 @@ public class GameController {
         boardView.update();
         updateUI();
         startTimer();
+        triggerBotTurnIfNeeded(); // If it's now the bot's turn, let it play
     }
 
     // Handle cell clicks for pawn movement
     public void onCellClicked(int row, int col) {
         if (gameState.isGameOver()) return;
         if (wallMode) return;
+        if (botThinking) return; // Block input while bot computes
 
         Position target = new Position(row, col);
         Player current = gameState.getCurrentPlayer();
@@ -433,6 +581,7 @@ public class GameController {
             } else {
                 gameState.nextTurn();
                 startTimer();
+                triggerBotTurnIfNeeded(); // Let the bot play if it's their turn
             }
 
             boardView.update();
@@ -447,6 +596,7 @@ public class GameController {
     public void onWallSlotClicked(int row, int col, boolean horizontal) {
         if (gameState.isGameOver()) return;
         if (!wallMode) return;
+        if (botThinking) return; // Block input while bot computes
 
         Wall.Orientation orientation = horizontal ?
                 Wall.Orientation.HORIZONTAL : Wall.Orientation.VERTICAL;
@@ -465,6 +615,7 @@ public class GameController {
                 boardView.update();
                 updateUI();
                 statusLabel.setText("");
+                triggerBotTurnIfNeeded(); // Let the bot play if it's their turn
             } else {
                 String reason = WallValidator.getInvalidReason(gameState, wall);
                 statusLabel.setText("Can't place wall: " + reason);
@@ -632,7 +783,8 @@ public class GameController {
                                    "-fx-background-radius: 5; -fx-cursor: hand;"));
         nextGameButton.setOnAction(e -> {
             dialog.close();
-            restart();
+            // Defer restart to avoid nested showAndWait() (dialog inside dialog)
+            Platform.runLater(() -> restart());
         });
 
         Button quitButton = new Button("Quit");
@@ -661,24 +813,64 @@ public class GameController {
     }
 
     private void restart() {
-        showPlayerNameDialog();
+        try {
+            // Invalidate any in-flight bot computations from the previous game
+            gameGeneration++;
+            if (pendingBotDelay != null) {
+                pendingBotDelay.stop();
+                pendingBotDelay = null;
+            }
+            stopTimer();
 
-        gameState.getPlayer(0).setName(player1Name);
-        gameState.getPlayer(1).setName(player2Name);
+            showPlayerNameDialog();
 
-        gameState.reset();
-        wallMode = false;
-        selectedWall = null;
-        wallConfirmPending = false;
-        boardView.clearSelectedWall();
-        updateModeButtons();
+            gameState.getPlayer(0).setName(player1Name);
+            gameState.getPlayer(1).setName(player2Name);
 
-        rebuildPlayerPanels();
+            // Re-initialize or remove bots based on dialog choice
+            if (player1IsBot && player2IsBot) {
+                // Bot vs Bot: random openings for diverse ML data
+                botBrain  = new BotBrain(0.0, 3);
+                botBrain1 = new BotBrain(0.0, 3);
+            } else if (player2IsBot) {
+                botBrain = new BotBrain(); // Deterministic for Human vs Bot
+                botBrain1 = null;
+            } else {
+                botBrain = null;
+                botBrain1 = null;
+            }
+            botThinking = false;
+            botVsBotPaused = false;
 
-        boardView.update();
-        updateUI();
-        statusLabel.setText("");
-        startTimer();
+            gameState.reset();
+            wallMode = false;
+            selectedWall = null;
+            wallConfirmPending = false;
+            boardView.clearSelectedWall();
+            updateModeButtons();
+
+            rebuildPlayerPanels();
+            rebuildBottomPanel();
+
+            boardView.update();
+            updateUI();
+            statusLabel.setText("");
+
+            if (player1IsBot && player2IsBot) {
+                stopTimer();
+                timerLabel.setText("\uD83E\uDD16 Bot vs Bot");
+                timerLabel.setTextFill(Color.web("#9b59b6"));
+                Timeline startDelay = new Timeline(new KeyFrame(Duration.millis(500), e -> {
+                    triggerBotTurnIfNeeded();
+                }));
+                startDelay.play();
+            } else {
+                startTimer();
+            }
+        } catch (Exception ex) {
+            System.err.println("[RESTART ERROR] " + ex.getClass().getName() + ": " + ex.getMessage());
+            ex.printStackTrace();
+        }
     }
 
     private void rebuildPlayerPanels() {
@@ -687,5 +879,188 @@ public class GameController {
         root.setLeft(player1Panel);
         player2Panel = createPlayerPanel(1);
         root.setRight(player2Panel);
+    }
+
+    private void rebuildBottomPanel() {
+        BorderPane root = (BorderPane) primaryStage.getScene().getRoot();
+        HBox bottomPanel = createBottomPanel();
+        root.setBottom(bottomPanel);
+    }
+
+    // ==================== BOT VS BOT CONTROLS ====================
+
+    private void toggleBotVsBotPause() {
+        botVsBotPaused = !botVsBotPaused;
+        if (pauseButton != null) {
+            if (botVsBotPaused) {
+                pauseButton.setText("▶ Play");
+                statusLabel.setText("⏸ Paused — click Play to continue");
+                statusLabel.setTextFill(Color.web("#f39c12"));
+            } else {
+                pauseButton.setText("⏸ Pause");
+                statusLabel.setText("");
+                // Resume by triggering next bot turn
+                triggerBotTurnIfNeeded();
+            }
+        }
+    }
+
+    private void changeBotSpeed(int deltaMs) {
+        botVsBotDelayMs = Math.max(100, Math.min(2000, botVsBotDelayMs + deltaMs));
+        if (speedLabel != null) {
+            speedLabel.setText("Speed: " + String.format("%.1f", botVsBotDelayMs / 1000.0) + "s");
+        }
+    }
+
+    // ==================== BOT INTEGRATION ====================
+
+    /**
+     * Checks if the current turn belongs to the bot and triggers its move.
+     *
+     * The bot runs in a BACKGROUND THREAD to avoid freezing the UI while
+     * it computes. A small delay (0.8s) is added before execution so the
+     * human can see the board state before the bot plays.
+     *
+     * Flow:
+     *   1. Check if current player is the bot (player index 1)
+     *   2. Show "thinking" status
+     *   3. Run BotBrain.computeBestAction() in a background thread
+     *   4. When done, use Platform.runLater() to apply the action on the JavaFX thread
+     */
+    private void triggerBotTurnIfNeeded() {
+        if (gameState.isGameOver()) return;
+        if (botVsBotPaused) return;
+
+        int currentIdx = gameState.getCurrentPlayerIndex();
+
+        // Determine which brain to use
+        BotBrain activeBrain = null;
+        if (currentIdx == 0 && player1IsBot && botBrain1 != null) {
+            activeBrain = botBrain1;
+        } else if (currentIdx == 1 && player2IsBot && botBrain != null) {
+            activeBrain = botBrain;
+        }
+
+        if (activeBrain == null) return;
+
+        botThinking = true;
+        stopTimer(); // Don't tick timer while bot thinks
+
+        String botName = gameState.getCurrentPlayer().getName();
+        boolean isBotVsBot = player1IsBot && player2IsBot;
+
+        if (isBotVsBot) {
+            statusLabel.setText(botName + " is thinking...");
+        } else {
+            statusLabel.setText("Bot is thinking...");
+        }
+        statusLabel.setTextFill(Color.web("#e67e22"));
+
+        // Delay: shorter for bot vs bot, longer for human vs bot
+        int delayMs = isBotVsBot ? botVsBotDelayMs : 800;
+        final BotBrain brainToUse = activeBrain;
+        final int expectedGeneration = gameGeneration; // Capture current generation
+
+        // Cancel any pending bot delay from previous turn
+        if (pendingBotDelay != null) {
+            pendingBotDelay.stop();
+        }
+
+        pendingBotDelay = new Timeline(new KeyFrame(Duration.millis(delayMs), e -> {
+
+            // Check if game was restarted while waiting
+            if (expectedGeneration != gameGeneration) return;
+
+            // Run bot computation in a background thread to keep UI responsive
+            Thread botThread = new Thread(() -> {
+                BotBrain.BotAction action = brainToUse.computeBestAction(gameState);
+
+                // Apply the action back on the JavaFX Application Thread
+                Platform.runLater(() -> {
+                    // Check if game was restarted while computing
+                    if (expectedGeneration != gameGeneration) return;
+                    executeBotAction(action);
+                });
+            });
+            botThread.setDaemon(true); // Thread dies when app closes
+            botThread.start();
+        }));
+        pendingBotDelay.play();
+    }
+
+    /**
+     * Executes the bot's chosen action on the game state.
+     *
+     * This runs on the JavaFX thread (via Platform.runLater) so it's safe
+     * to modify UI elements and game state here.
+     */
+    private void executeBotAction(BotBrain.BotAction action) {
+        try {
+        String botName = gameState.getCurrentPlayer().getName();
+
+        if (action == null) {
+            statusLabel.setText(botName + " couldn't decide — turn skipped");
+            gameState.nextTurn();
+            botThinking = false;
+            boardView.update();
+            updateUI();
+            startTimer();
+            triggerBotTurnIfNeeded(); // Next bot's turn in Bot vs Bot
+            return;
+        }
+
+        if (action.type == BotBrain.BotAction.Type.MOVE) {
+            Player bot = gameState.getCurrentPlayer();
+            bot.setPosition(action.moveTarget);
+            statusLabel.setText(botName + " moved to " + action.moveTarget);
+            statusLabel.setTextFill(Color.web("#2ecc71"));
+
+            gameState.checkWinCondition();
+            if (gameState.isGameOver()) {
+                botThinking = false;
+                stopTimer();
+                boardView.update();
+                updateUI();
+                showWinner();
+                return;
+            }
+
+        } else if (action.type == BotBrain.BotAction.Type.WALL) {
+            Wall wall = action.wallToPlace;
+            if (WallValidator.isValidWallPlacement(gameState, wall)) {
+                gameState.addWall(wall);
+                String orientStr = wall.isHorizontal() ? "horizontal" : "vertical";
+                statusLabel.setText(botName + " placed " + orientStr + " wall at ("
+                                   + wall.getRow() + "," + wall.getCol() + ")");
+                statusLabel.setTextFill(Color.web("#e67e22"));
+            } else {
+                statusLabel.setText(botName + " wall was invalid — turn skipped");
+            }
+        }
+
+        // Advance to next turn
+        gameState.nextTurn();
+        botThinking = false;
+        wallMode = false;
+        updateModeButtons();
+        boardView.update();
+        updateUI();
+        startTimer();
+        triggerBotTurnIfNeeded(); // Chain to next bot in Bot vs Bot
+        } catch (Exception ex) {
+            System.err.println("[BOT ACTION ERROR] " + ex.getClass().getName() + ": " + ex.getMessage());
+            ex.printStackTrace();
+            botThinking = false;
+        }
+    }
+
+    /**
+     * Returns true if the current player is a bot.
+     * Used by BoardView to optionally hide valid move highlights during bot's turn.
+     */
+    public boolean isBotTurn() {
+        if (player1IsBot && gameState.getCurrentPlayerIndex() == 0) return true;
+        if (player2IsBot && gameState.getCurrentPlayerIndex() == 1) return true;
+        return false;
     }
 }
