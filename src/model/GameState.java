@@ -127,6 +127,41 @@ public class GameState {
     }
 
 
+    /**
+     * Creates a deep copy of the entire game state for bot simulation.
+     * The bot uses this to "imagine" future moves without affecting the real game.
+     * All mutable objects (players, walls, positions) are cloned independently.
+     */
+    public GameState deepCopy() {
+        GameState copy = new GameState();
+
+        // Copy each player's current state (position, walls remaining)
+        for (int i = 0; i < 2; i++) {
+            Player original = this.players[i];
+            Player cloned = copy.players[i];
+            cloned.setName(original.getName());
+            cloned.setPosition(new Position(original.getPosition().getRow(), original.getPosition().getCol()));
+            cloned.setWallsRemaining(original.getWallsRemaining());
+        }
+
+        // Copy all walls on the board
+        for (Wall wall : this.walls) {
+            Wall wallCopy = new Wall(wall.getRow(), wall.getCol(), wall.getOrientation());
+            wallCopy.setOwnerIndex(wall.getOwnerIndex());
+            copy.walls.add(wallCopy);
+        }
+
+        copy.currentPlayerIndex = this.currentPlayerIndex;
+        copy.gameOver = this.gameOver;
+        // winner reference points to copy's player array
+        if (this.winner != null) {
+            int winnerIdx = (this.winner == this.players[0]) ? 0 : 1;
+            copy.winner = copy.players[winnerIdx];
+        }
+
+        return copy;
+    }
+
     public void reset() {
         players[0].reset(new Position(8, 4));
         players[1].reset(new Position(0, 4));
