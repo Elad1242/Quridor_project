@@ -278,21 +278,4 @@ public class WallEvaluator {
         return count;
     }
 
-    static boolean[] getBlockedColumns(GameState state, int targetRow, Wall extraWall) {
-        boolean[] blocked = new boolean[9];
-        for (int col = 0; col < 9; col++) {
-            Position from = new Position(targetRow, col);
-            Position to = new Position(targetRow + 1, col);
-            if (!from.isValid() || !to.isValid()) continue;
-            if (state.isBlocked(from, to)) { blocked[col] = true; continue; }
-            if (extraWall != null && extraWall.blocksMove(from, to)) { blocked[col] = true; }
-        }
-        return blocked;
-    }
-
-    static int countTrue(boolean[] arr) {
-        int count = 0;
-        for (boolean b : arr) if (b) count++;
-        return count;
-    }
 }

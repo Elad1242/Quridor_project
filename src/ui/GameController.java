@@ -1054,13 +1054,4 @@ public class GameController {
         }
     }
 
-    /**
-     * Returns true if the current player is a bot.
-     * Used by BoardView to optionally hide valid move highlights during bot's turn.
-     */
-    public boolean isBotTurn() {
-        if (player1IsBot && gameState.getCurrentPlayerIndex() == 0) return true;
-        if (player2IsBot && gameState.getCurrentPlayerIndex() == 1) return true;
-        return false;
-    }
 }

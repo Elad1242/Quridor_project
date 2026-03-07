@@ -72,26 +72,6 @@ public class BotBrain {
         this.rng = new Random(System.nanoTime() ^ Thread.currentThread().getId() ^ (long)(Math.random() * Long.MAX_VALUE));
     }
 
-    /** Returns true if this bot has exploration/diversity enabled. */
-    public boolean isExplorationEnabled() {
-        return openingRandomMoves > 0 || explorationNoise > 0;
-    }
-
-    /** Returns the exploration noise level (used by MoveEvaluator for per-move diversity). */
-    public double getExplorationNoise() {
-        return explorationNoise;
-    }
-
-    /** Returns the RNG instance (used by MoveEvaluator for per-move diversity). */
-    public Random getRng() {
-        return rng;
-    }
-
-    /** Returns current turn count (used by MoveEvaluator for endgame noise reduction). */
-    public int getTurnCount() {
-        return turnCount;
-    }
-
     public static class BotAction {
         public enum Type { MOVE, WALL }
 
