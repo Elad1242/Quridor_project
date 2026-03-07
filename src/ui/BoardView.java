@@ -352,7 +352,4 @@ public class BoardView extends Pane {
         selectedWallRect.setVisible(false);
     }
 
-    public Wall getSelectedWall() {
-        return currentSelectedWall;
-    }
 }

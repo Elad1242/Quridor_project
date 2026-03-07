@@ -66,42 +66,6 @@ public class PathFinder {
         return true;
     }
 
-    // Returns shortest path length to goal (useful for AI)
-    public static int getShortestPathLength(GameState state, Player player) {
-        Position start = player.getPosition();
-        int goalRow = player.getGoalRow();
-
-        Map<Position, Integer> distance = new HashMap<>();
-        Queue<Position> queue = new LinkedList<>();
-        queue.add(start);
-        distance.put(start, 0);
-
-        int[][] directions = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
-
-        while (!queue.isEmpty()) {
-            Position current = queue.poll();
-            int currentDist = distance.get(current);
-
-            if (current.getRow() == goalRow) {
-                return currentDist;
-            }
-
-            for (int[] dir : directions) {
-                Position next = current.move(dir[0], dir[1]);
-
-                if (next.isValid() &&
-                    !distance.containsKey(next) &&
-                    !state.isBlocked(current, next)) {
-
-                    distance.put(next, currentDist + 1);
-                    queue.add(next);
-                }
-            }
-        }
-
-        return -1;
-    }
-
     // ==================== A* SEARCH ====================
 
     /**

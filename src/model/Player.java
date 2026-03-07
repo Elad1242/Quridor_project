@@ -65,16 +65,6 @@ public class Player {
         this.wallsRemaining = wallsRemaining;
     }
 
-    /**
-     * Creates a lightweight copy of this player for bot simulation.
-     * Shares the immutable Color and goalRow, copies mutable position and walls count.
-     */
-    public Player copyOf() {
-        Player copy = new Player(this.name, new Position(position.getRow(), position.getCol()), this.goalRow, this.color);
-        copy.wallsRemaining = this.wallsRemaining;
-        return copy;
-    }
-
     public boolean hasReachedGoal() {
         return position.getRow() == goalRow;
     }

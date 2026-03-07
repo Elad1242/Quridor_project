@@ -178,21 +178,4 @@ public class BoardGraph {
         return adjacency.getOrDefault(pos, Collections.emptyMap());
     }
 
-    /**
-     * Returns the edge weight between two positions.
-     * Returns Double.MAX_VALUE if no edge exists (blocked by wall).
-     */
-    public double getEdgeWeight(Position from, Position to) {
-        Map<Position, Double> neighbors = adjacency.get(from);
-        if (neighbors == null) return Double.MAX_VALUE;
-        return neighbors.getOrDefault(to, Double.MAX_VALUE);
-    }
-
-    /**
-     * Checks if an edge exists between two positions.
-     */
-    public boolean hasEdge(Position from, Position to) {
-        Map<Position, Double> neighbors = adjacency.get(from);
-        return neighbors != null && neighbors.containsKey(to);
-    }
 }
