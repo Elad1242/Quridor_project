@@ -1,9 +1,10 @@
-package bot;
+package DataBaseBuild;
 
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import ml.GameFeatures;
 import org.bson.Document;
 
 import java.util.ArrayList;

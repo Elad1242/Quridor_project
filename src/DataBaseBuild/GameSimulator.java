@@ -1,5 +1,9 @@
-package bot;
+package DataBaseBuild;
 
+import bot.BoardGraph;
+import bot.BotBrain;
+import bot.WallEvaluator;
+import ml.GameFeatures;
 import model.GameState;
 import model.Player;
 import model.Position;
@@ -31,7 +35,10 @@ public class GameSimulator {
 
         // Both bots get exploration noise for training diversity
         BotBrain bot0 = new BotBrain(0.0, 4); // 4 random opening moves
+        bot0.setSilent(true);
         BotBrain bot1 = new BotBrain(0.0, 4);
+        bot1.setSilent(true);
+        WallEvaluator.silent = true;
         BotBrain[] bots = { bot0, bot1 };
 
         List<TurnRecord> turns = new ArrayList<>();
