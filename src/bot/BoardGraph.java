@@ -168,6 +168,39 @@ public class BoardGraph {
         return Math.abs(a.getRow() - b.getRow()) + Math.abs(a.getCol() - b.getCol());
     }
 
+    /**
+     * Builds the graph from a specific player's perspective.
+     * Used by GameFeatures to compute safety for either player.
+     *
+     * @param state       the current game state
+     * @param opponentPos the opponent of playerIndex (used for proximity penalty)
+     * @param playerIndex which player is "self" for wall ownership separation
+     */
+    public void buildFromStateForPlayer(GameState state, Position opponentPos, int playerIndex) {
+        adjacency.clear();
+        this.botPlayerIndex = playerIndex;
+
+        List<Wall> opponentWalls = new ArrayList<>();
+        for (Wall w : state.getWalls()) {
+            if (w.getOwnerIndex() != playerIndex) {
+                opponentWalls.add(w);
+            }
+        }
+
+        for (int row = 0; row < BOARD_SIZE; row++) {
+            for (int col = 0; col < BOARD_SIZE; col++) {
+                Position from = new Position(row, col);
+                for (int[] dir : DIRECTIONS) {
+                    Position to = from.move(dir[0], dir[1]);
+                    if (!to.isValid()) continue;
+                    if (state.isBlocked(from, to)) continue;
+                    double weight = calculateEdgeWeight(from, to, opponentWalls, opponentPos);
+                    adjacency.computeIfAbsent(from, k -> new HashMap<>()).put(to, weight);
+                }
+            }
+        }
+    }
+
     // ===================== PUBLIC API =====================
 
     /**

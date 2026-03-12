@@ -15,6 +15,7 @@ public class GameState {
     private final Player[] players;
     private final List<Wall> walls;
     private int currentPlayerIndex;
+    private int turnCount;
     private boolean gameOver;
     private Player winner;
 
@@ -43,6 +44,7 @@ public class GameState {
 
         walls = new ArrayList<>();
         currentPlayerIndex = 0;
+        turnCount = 0;
         gameOver = false;
         winner = null;
     }
@@ -88,6 +90,11 @@ public class GameState {
     // Switches turn to the other player
     public void nextTurn() {
         currentPlayerIndex = 1 - currentPlayerIndex;
+        turnCount++;
+    }
+
+    public int getTurnCount() {
+        return turnCount;
     }
 
     public int getCurrentPlayerIndex() {
@@ -152,6 +159,7 @@ public class GameState {
         }
 
         copy.currentPlayerIndex = this.currentPlayerIndex;
+        copy.turnCount = this.turnCount;
         copy.gameOver = this.gameOver;
         // winner reference points to copy's player array
         if (this.winner != null) {
@@ -167,6 +175,7 @@ public class GameState {
         players[1].reset(new Position(0, 4));
         walls.clear();
         currentPlayerIndex = 0;
+        turnCount = 0;
         gameOver = false;
         winner = null;
     }
