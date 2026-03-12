@@ -1,5 +1,6 @@
-package bot;
+package ml;
 
+import bot.BoardGraph;
 import logic.FlowCalculator;
 import logic.PathFinder;
 import model.GameState;

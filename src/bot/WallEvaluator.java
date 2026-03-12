@@ -32,6 +32,8 @@ import java.util.*;
  */
 public class WallEvaluator {
 
+    public static boolean silent = false;
+
     public static class ScoredWall {
         public final Wall wall;
         public final double score;
@@ -93,13 +95,15 @@ public class WallEvaluator {
             }
         }
 
-        if (bestWall != null) {
-            System.out.println("[WALL-EVAL v10] Best wall: " + bestWall.wall
-                    + " score=" + String.format("%.1f", bestWall.score)
-                    + (emergency ? " [EMERGENCY]" : ""));
-        } else {
-            System.out.println("[WALL-EVAL v10] No wall with positive score found."
-                    + (emergency ? " [EMERGENCY MODE ACTIVE]" : ""));
+        if (!silent) {
+            if (bestWall != null) {
+                System.out.println("[WALL-EVAL v10] Best wall: " + bestWall.wall
+                        + " score=" + String.format("%.1f", bestWall.score)
+                        + (emergency ? " [EMERGENCY]" : ""));
+            } else {
+                System.out.println("[WALL-EVAL v10] No wall with positive score found."
+                        + (emergency ? " [EMERGENCY MODE ACTIVE]" : ""));
+            }
         }
 
         return bestWall;

@@ -45,10 +45,16 @@ public class BotBrain {
     private final int openingRandomMoves;     // Number of random opening moves (from ALL valid moves)
     private final Random rng;
     private int turnCount = 0;
+    private boolean silent = false;
 
     /** Default constructor: deterministic bot (for human vs bot). */
     public BotBrain() {
         this(0.0, 0);
+    }
+
+    /** Enable silent mode (no debug prints). Used during batch simulation. */
+    public void setSilent(boolean silent) {
+        this.silent = silent;
     }
 
     /**
@@ -118,7 +124,7 @@ public class BotBrain {
 
         turnCount++;
 
-        System.out.println("[BOT v10] botDist=" + botDist + " oppDist=" + oppDist
+        if (!silent) System.out.println("[BOT v10] botDist=" + botDist + " oppDist=" + oppDist
                 + " wallsLeft=" + wallsLeft + " consecutive=" + consecutiveWalls
                 + " selfHarmTotal=" + cumulativeSelfHarm
                 + " fwd=" + hasForwardMove + " turn=" + turnCount);
@@ -163,14 +169,14 @@ public class BotBrain {
                     }
                 }
 
-                System.out.println("[BOT v10] >> RANDOM OPENING: " + randomMove + " (turn " + turnCount + "/" + openingRandomMoves + ")");
+                if (!silent) System.out.println("[BOT v10] >> RANDOM OPENING: " + randomMove + " (turn " + turnCount + "/" + openingRandomMoves + ")");
                 return doMove(BotAction.move(randomMove, 50.0));
             }
         }
 
         // === RULE 1: Instant win ===
         if (botDist == 1) {
-            System.out.println("[BOT v10] >> INSTANT WIN!");
+            if (!silent) System.out.println("[BOT v10] >> INSTANT WIN!");
             return doMove(forceMove(state));
         }
 
@@ -189,7 +195,7 @@ public class BotBrain {
                     int emSelfHarm = (botAfter >= 0) ? botAfter - botDist : 999;
                     // Only block if the wall actually helps and doesn't hurt us badly
                     if (emDamage > 0 && emSelfHarm <= 2) {
-                        System.out.println("[BOT v10] >> EMERGENCY BLOCK: " + emergencyWall.wall
+                        if (!silent) System.out.println("[BOT v10] >> EMERGENCY BLOCK: " + emergencyWall.wall
                                 + " (score=" + String.format("%.1f", emergencyWall.score)
                                 + " oppDist=" + oppDist + " dmg=" + emDamage + ")");
                         return doWall(BotAction.wall(emergencyWall.wall, emergencyWall.score));
@@ -254,16 +260,16 @@ public class BotBrain {
                 // When walls are scarce (≤3), only place walls with significant damage
                 if (!isEmergency && wallsLeft <= 3 && pathDamage < 2) {
                     rejectWall = true;
-                    System.out.println("[BOT v10] CONSERVE WALLS: only " + wallsLeft + " left, pathDmg=" + pathDamage);
+                    if (!silent) System.out.println("[BOT v10] CONSERVE WALLS: only " + wallsLeft + " left, pathDmg=" + pathDamage);
                 }
 
                 if (rejectWall) {
-                    System.out.println("[BOT v10] HARM REJECT wall " + bestWall.wall
+                    if (!silent) System.out.println("[BOT v10] HARM REJECT wall " + bestWall.wall
                             + " selfHarm=" + selfHarmActual + " pathDmg=" + pathDamage
                             + " botPathAfter=" + botPathAfterWall);
                     bestWall = null;
                 } else if (isEmergency && (selfHarmActual >= 4 || botPathAfterWall >= 16)) {
-                    System.out.println("[BOT v10] EMERGENCY REJECT wall " + bestWall.wall
+                    if (!silent) System.out.println("[BOT v10] EMERGENCY REJECT wall " + bestWall.wall
                             + " selfHarm=" + selfHarmActual);
                     bestWall = null;
                 } else if (bestWall != null) {
@@ -283,13 +289,13 @@ public class BotBrain {
                     // pathDmg=1 walls waste wall tokens when trapped; better to move
                     if (!hasForwardMove && pathDamage >= 2) {
                         wallValue += 25.0;
-                        System.out.println("[BOT v10] NO-FORWARD BONUS +25 (pathDmg=" + pathDamage + ")");
+                        if (!silent) System.out.println("[BOT v10] NO-FORWARD BONUS +25 (pathDmg=" + pathDamage + ")");
                     }
 
                     // BONUS 2: Best move is sideways AND wall has good damage
                     if (!bestMoveIsForward && pathDamage >= 2) {
                         wallValue += 10.0;
-                        System.out.println("[BOT v10] SIDEWAYS-MOVE BONUS +10");
+                        if (!silent) System.out.println("[BOT v10] SIDEWAYS-MOVE BONUS +10");
                     }
 
                     // BONUS 3: Bot is losing the race — but only for strong walls
@@ -297,7 +303,7 @@ public class BotBrain {
                     if (raceGap > 2 && pathDamage >= 2) {
                         double racingBonus = Math.min(raceGap * 2.0, 20.0);
                         wallValue += racingBonus;
-                        System.out.println("[BOT v10] LOSING-RACE BONUS +" + String.format("%.0f", racingBonus));
+                        if (!silent) System.out.println("[BOT v10] LOSING-RACE BONUS +" + String.format("%.0f", racingBonus));
                     }
 
                     // BONUS 4: Emergency proximity
@@ -310,7 +316,7 @@ public class BotBrain {
                     // the wall is objectively better than just moving forward
                     if (bestMoveIsForward && netTempo >= 1.0) {
                         wallValue += 10.0; // Make it competitive with forward moves (~65)
-                        System.out.println("[BOT v10] PROACTIVE-WALL BONUS +10 (netTempo=" + String.format("%.1f", netTempo) + ")");
+                        if (!silent) System.out.println("[BOT v10] PROACTIVE-WALL BONUS +10 (netTempo=" + String.format("%.1f", netTempo) + ")");
                     }
 
                     // PENALTY: Don't over-wall when winning comfortably
@@ -318,7 +324,7 @@ public class BotBrain {
                         wallValue -= 15.0;
                     }
 
-                    System.out.println("[BOT v10] wallRaw=" + String.format("%.1f", bestWall.score)
+                    if (!silent) System.out.println("[BOT v10] wallRaw=" + String.format("%.1f", bestWall.score)
                             + " pathDmg=" + pathDamage + " selfHarm=" + selfHarmActual
                             + " netTempo=" + String.format("%.1f", netTempo)
                             + " wallValue=" + String.format("%.1f", wallValue)
@@ -327,7 +333,7 @@ public class BotBrain {
                 }
             }
         } else if (!canWall && wallsLeft > 0) {
-            System.out.println("[BOT v10] WALL SUPPRESSED: consecutive=" + consecutiveWalls
+            if (!silent) System.out.println("[BOT v10] WALL SUPPRESSED: consecutive=" + consecutiveWalls
                     + " selfHarmTotal=" + cumulativeSelfHarm);
         }
 
@@ -351,7 +357,7 @@ public class BotBrain {
             int selfHarm = (botPathAfter >= 0) ? botPathAfter - botDist : 0;
             cumulativeSelfHarm += Math.max(0, selfHarm);
 
-            System.out.println("[BOT v10] >> WALL: " + bestWall.wall
+            if (!silent) System.out.println("[BOT v10] >> WALL: " + bestWall.wall
                     + " (wallVal=" + String.format("%.1f", wallValue)
                     + " > moveVal=" + String.format("%.1f", moveValue)
                     + " selfHarmTotal=" + cumulativeSelfHarm + ")");
@@ -359,7 +365,7 @@ public class BotBrain {
         }
 
         if (bestMove != null) {
-            System.out.println("[BOT v10] >> MOVE: " + bestMove.target
+            if (!silent) System.out.println("[BOT v10] >> MOVE: " + bestMove.target
                     + " (moveVal=" + String.format("%.1f", moveValue)
                     + ", wallVal=" + String.format("%.1f", wallValue) + ")");
             return doMove(BotAction.move(bestMove.target, bestMove.score));
