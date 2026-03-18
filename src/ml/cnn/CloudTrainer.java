@@ -241,18 +241,19 @@ public class CloudTrainer {
      * Generate imitation learning data from BotBrain games.
      * The CNN learns to predict which move BotBrain would make.
      *
-     * IMPORTANT: We add random exploration in early turns to create game variety.
-     * Without this, BotBrain vs BotBrain would play the same game every time!
+     * Uses BotBrain's built-in randomness (openingRandomMoves + explorationNoise)
+     * to create game variety. Each game creates new BotBrain instances with
+     * different random seeds for unique games.
      */
     private void generateImitationData(List<INDArray> states, List<INDArray> labels, int numGames) {
         int progressInterval = numGames / 20;
-        int RANDOM_TURNS = 8;  // Random moves in first 8 turns for variety
-        double EXPLORATION_PROB = 0.3;  // 30% chance of random move even after turn 8
 
         for (int g = 0; g < numGames; g++) {
             GameState state = new GameState();
-            BotBrain bot1 = new BotBrain(0.1, 5);
-            BotBrain bot2 = new BotBrain(0.1, 5);
+            // Use BotBrain's built-in randomness: explorationNoise=0.3, openingRandomMoves=8
+            // Each BotBrain instance gets unique random seed automatically
+            BotBrain bot1 = new BotBrain(0.3, 8);
+            BotBrain bot2 = new BotBrain(0.3, 8);
             bot1.setSilent(true);
             bot2.setSilent(true);
 
@@ -261,33 +262,7 @@ public class CloudTrainer {
                 int idx = state.getCurrentPlayerIndex();
                 BotBrain bot = (idx == 0) ? bot1 : bot2;
 
-                // Add randomness for game variety
-                boolean useRandom = (turn < RANDOM_TURNS) || (random.nextDouble() < EXPLORATION_PROB);
-
-                BotBrain.BotAction action = null;
-
-                if (useRandom) {
-                    // Random move for variety
-                    List<Position> validMoves = MoveValidator.getValidMoves(state, me);
-                    if (!validMoves.isEmpty()) {
-                        Position randomMove = validMoves.get(random.nextInt(validMoves.size()));
-                        action = BotBrain.BotAction.move(randomMove, 0);
-                    }
-
-                    // Occasionally place random wall instead
-                    if (me.getWallsRemaining() > 0 && random.nextDouble() < 0.2) {
-                        List<Wall> walls = getValidWalls(state);
-                        if (!walls.isEmpty()) {
-                            Wall randomWall = walls.get(random.nextInt(walls.size()));
-                            action = BotBrain.BotAction.wall(randomWall, 0);
-                        }
-                    }
-                }
-
-                // Fall back to BotBrain if no random action or for learning signal
-                if (action == null) {
-                    action = bot.computeBestAction(state);
-                }
+                BotBrain.BotAction action = bot.computeBestAction(state);
                 if (action == null) break;
 
                 // Record state and BotBrain's choice
