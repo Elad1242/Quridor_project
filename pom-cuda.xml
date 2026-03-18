@@ -27,10 +27,10 @@
             <version>${dl4j.version}</version>
         </dependency>
 
-        <!-- ND4J Backend (CUDA 11.6 for GPU) -->
+        <!-- ND4J Backend (Native CPU - works everywhere) -->
         <dependency>
             <groupId>org.nd4j</groupId>
-            <artifactId>nd4j-cuda-11.6-platform</artifactId>
+            <artifactId>nd4j-native-platform</artifactId>
             <version>${dl4j.version}</version>
         </dependency>
 
