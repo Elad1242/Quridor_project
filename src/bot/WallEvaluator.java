@@ -1,6 +1,7 @@
 package bot;
 
 import logic.FlowCalculator;
+import logic.MoveValidator;
 import logic.PathFinder;
 import logic.WallValidator;
 import model.GameState;
@@ -179,9 +180,23 @@ public class WallEvaluator {
             score -= selfHarm * (emergency ? 1.0 : 2.0);
         }
 
-        // === WALL SYNERGY ===
+        // === WALL SYNERGY (improved) ===
         int synergy = countAdjacentWalls(state, candidate);
         score += synergy * 2.5;
+
+        // BARRIER CREATION BONUS: Walls that extend existing barriers are very valuable
+        // because they create longer walls that are harder to navigate around
+        if (synergy >= 2) {
+            score += 5.0;  // Bonus for creating extended barriers
+        }
+
+        // Check if this wall creates a "funnel" - forces opponent to specific path
+        int funnelBonus = evaluateFunnelCreation(state, candidate, opponent, opponentPathBefore);
+        score += funnelBonus;
+
+        // Kill zone bonus - walls near opponent's goal are very valuable
+        double killZoneBonus = evaluateKillZone(state, candidate, opponent);
+        score += killZoneBonus;
 
         // === POSITIONAL SCORING ===
         int oppRow = opponent.getPosition().getRow();
@@ -282,4 +297,59 @@ public class WallEvaluator {
         return count;
     }
 
+    /**
+     * Evaluates if this wall creates a "funnel" effect - forcing opponent
+     * to take a specific narrow path that can be blocked later.
+     */
+    private static int evaluateFunnelCreation(GameState state, Wall candidate,
+                                               Player opponent, int oppPathBefore) {
+        // Simulate placing the wall
+        GameState sim = state.deepCopy();
+        sim.addWall(candidate);
+
+        // Get opponent's new path
+        List<Position> newPath = PathFinder.getAStarPath(sim, opponent);
+        if (newPath == null || newPath.size() < 2) return 0;
+
+        // Count how many "bottleneck" positions the opponent must pass through
+        // A bottleneck is a position where the opponent has limited options
+        int bottleneckCount = 0;
+        Player simOpp = sim.getOtherPlayer();
+
+        for (int i = 1; i < Math.min(newPath.size(), 5); i++) {
+            Position pos = newPath.get(i);
+            Position origPos = simOpp.getPosition();
+            simOpp.setPosition(pos);
+            List<Position> movesFromPos = MoveValidator.getValidMoves(sim, simOpp);
+            simOpp.setPosition(origPos);
+
+            // If opponent has only 1-2 valid moves from this position, it's a bottleneck
+            if (movesFromPos.size() <= 2) {
+                bottleneckCount++;
+            }
+        }
+
+        // More bottlenecks = better funnel
+        return bottleneckCount * 2;
+    }
+
+    /**
+     * Evaluates if wall placement helps create a "kill zone" near opponent's goal.
+     * Kill zones are areas where walls can trap or severely slow the opponent.
+     */
+    public static double evaluateKillZone(GameState state, Wall candidate, Player opponent) {
+        int oppGoalRow = opponent.getGoalRow();
+        int wallRow = candidate.getRow();
+
+        // Walls in the last 2 rows before opponent's goal are extremely valuable
+        int distToGoal = Math.abs(wallRow - oppGoalRow);
+        if (distToGoal <= 1) {
+            return 8.0;  // Critical position
+        } else if (distToGoal == 2) {
+            return 4.0;
+        } else if (distToGoal == 3) {
+            return 2.0;
+        }
+        return 0.0;
+    }
 }
