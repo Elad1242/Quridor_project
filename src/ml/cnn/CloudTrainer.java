@@ -34,19 +34,19 @@ import java.util.*;
  */
 public class CloudTrainer {
 
-    // ============== FAST 1-HOUR TRAINING ==============
-    // Optimized for A100 GPU, ~1 hour total
+    // ============== CLOUD-SCALE PARAMETERS ==============
+    // Adjust these based on your cloud instance
 
-    private static final int IMITATION_GAMES = 15000;      // Reduced for speed
-    private static final int SELF_PLAY_ROUNDS = 10;        // Fewer rounds
-    private static final int GAMES_PER_ROUND = 2000;       // Fewer games/round
-    private static final int EPOCHS_INITIAL = 20;          // Faster initial training
-    private static final int EPOCHS_PER_ROUND = 5;         // Faster per-round
-    private static final int BATCH_SIZE = 512;             // Larger batch = faster on A100
-    private static final double LEARNING_RATE = 0.002;     // Slightly higher LR for faster convergence
-    private static final double EXPLORATION_RATE = 0.2;    // More exploration to learn faster
-    private static final int MAX_WALLS_TO_EVAL = 30;       // Faster move selection
-    private static final int TEST_GAMES = 100;             // Faster testing
+    private static final int IMITATION_GAMES = 50000;      // Learn from BotBrain
+    private static final int SELF_PLAY_ROUNDS = 20;        // Self-improvement rounds
+    private static final int GAMES_PER_ROUND = 5000;       // Games per self-play round
+    private static final int EPOCHS_INITIAL = 30;          // Initial training epochs
+    private static final int EPOCHS_PER_ROUND = 10;        // Epochs per round
+    private static final int BATCH_SIZE = 256;             // Larger batch for GPU
+    private static final double LEARNING_RATE = 0.001;
+    private static final double EXPLORATION_RATE = 0.15;
+    private static final int MAX_WALLS_TO_EVAL = 50;       // More wall evaluation
+    private static final int TEST_GAMES = 200;             // Games for win rate test
 
     // Larger network for more capacity
     private static final int CONV_FILTERS = 128;           // More filters
