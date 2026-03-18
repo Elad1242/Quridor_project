@@ -65,7 +65,7 @@ public class PolicyTrainer {
         // Suppress verbose wall evaluation output for faster training
         WallEvaluator.silent = true;
 
-        String mongoUri = "mongodb+srv://EladMongo:Elad1234@eladprojectcluster.ebx4rpd.mongodb.net/?appName=EladProjectCluster";
+        String mongoUri = System.getenv("MONGODB_URI") != null ? System.getenv("MONGODB_URI") : "mongodb://localhost:27017";
         String outputPath = args.length > 0 ? args[0] : "quoridor_policy.eg";
 
         System.out.println("=== FAST Policy Network Trainer ===");

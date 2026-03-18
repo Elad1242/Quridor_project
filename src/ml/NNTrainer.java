@@ -106,7 +106,7 @@ public class NNTrainer {
     }
 
     public static void main(String[] args) {
-        String mongoUri = "mongodb+srv://EladMongo:Elad1234@eladprojectcluster.ebx4rpd.mongodb.net/?appName=EladProjectCluster";
+        String mongoUri = System.getenv("MONGODB_URI") != null ? System.getenv("MONGODB_URI") : "mongodb://localhost:27017";
         String outputFile = "quoridor_nn.eg";
 
         if (args.length >= 1) mongoUri = args[0];
