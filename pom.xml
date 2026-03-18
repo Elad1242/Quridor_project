@@ -27,7 +27,7 @@
             <version>${dl4j.version}</version>
         </dependency>
 
-        <!-- ND4J Backend (CPU) -->
+        <!-- ND4J Backend (CPU - CUDA 12.6 incompatible with DL4J's CUDA 11.x) -->
         <dependency>
             <groupId>org.nd4j</groupId>
             <artifactId>nd4j-native-platform</artifactId>
