@@ -15,7 +15,7 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <djl.version>0.31.0</djl.version>
+        <djl.version>0.23.0</djl.version>
         <javafx.version>17.0.17</javafx.version>
     </properties>
 
@@ -46,11 +46,12 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- PyTorch Native CUDA 12.4 for GPU (H100, A100, RTX 4090) -->
+        <!-- PyTorch Native CUDA 11.8 to match Docker image -->
         <dependency>
             <groupId>ai.djl.pytorch</groupId>
-            <artifactId>pytorch-native-cu124</artifactId>
+            <artifactId>pytorch-native-cu118</artifactId>
             <classifier>linux-x86_64</classifier>
+            <version>2.0.1</version>
             <scope>runtime</scope>
         </dependency>
 
