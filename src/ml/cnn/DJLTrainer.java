@@ -1,5 +1,6 @@
 package ml.cnn;
 
+import ai.djl.Device;
 import ai.djl.Model;
 import ai.djl.engine.Engine;
 import ai.djl.ndarray.NDArray;
@@ -67,6 +68,7 @@ public class DJLTrainer {
 
     private Model model;
     private NDManager manager;
+    private Device device;
     private Random random = new Random(42);
 
     public static void main(String[] args) {
@@ -80,7 +82,17 @@ public class DJLTrainer {
     }
 
     public void train() {
-        manager = NDManager.newBaseManager();
+        // Force GPU device
+        if (Engine.getInstance().getGpuCount() > 0) {
+            device = Device.gpu(0);
+            System.out.println("  Using GPU: " + device);
+        } else {
+            device = Device.cpu();
+            System.out.println("  WARNING: No GPU detected, using CPU (will be slow)");
+        }
+
+        // Create manager on specific device
+        manager = NDManager.newBaseManager(device);
 
         printSystemInfo();
 
@@ -191,7 +203,7 @@ public class DJLTrainer {
     }
 
     private Model createModel() {
-        Model model = Model.newInstance("quoridor-cnn");
+        Model model = Model.newInstance("quoridor-cnn", device);
 
         SequentialBlock block = new SequentialBlock();
 
