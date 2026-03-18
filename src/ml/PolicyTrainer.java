@@ -65,7 +65,7 @@ public class PolicyTrainer {
         // Suppress verbose wall evaluation output for faster training
         WallEvaluator.silent = true;
 
-        String mongoUri = "REMOVED";
+        String mongoUri = System.getenv("MONGODB_URI") != null ? System.getenv("MONGODB_URI") : "mongodb://localhost:27017";
         String outputPath = args.length > 0 ? args[0] : "quoridor_policy.eg";
 
         System.out.println("=== FAST Policy Network Trainer ===");

@@ -106,7 +106,7 @@ public class NNTrainer {
     }
 
     public static void main(String[] args) {
-        String mongoUri = "REMOVED";
+        String mongoUri = System.getenv("MONGODB_URI") != null ? System.getenv("MONGODB_URI") : "mongodb://localhost:27017";
         String outputFile = "quoridor_nn.eg";
 
         if (args.length >= 1) mongoUri = args[0];
