@@ -39,10 +39,18 @@
             <artifactId>api</artifactId>
         </dependency>
 
-        <!-- DJL PyTorch Engine (auto-downloads native libs for your GPU) -->
+        <!-- DJL PyTorch Engine -->
         <dependency>
             <groupId>ai.djl.pytorch</groupId>
             <artifactId>pytorch-engine</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- PyTorch Native CUDA 12.4 for GPU (H100, A100, RTX 4090) -->
+        <dependency>
+            <groupId>ai.djl.pytorch</groupId>
+            <artifactId>pytorch-native-cu124</artifactId>
+            <classifier>linux-x86_64</classifier>
             <scope>runtime</scope>
         </dependency>
 
