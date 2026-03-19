@@ -330,43 +330,64 @@ class SimpleBot:
 
 # ==================== CNN MODEL ====================
 
-class QuoridorCNN(nn.Module):
-    def __init__(self):
+class ResidualBlock(nn.Module):
+    """Pre-activation residual block for better gradient flow"""
+    def __init__(self, channels):
         super().__init__()
-
-        self.conv = nn.Sequential(
-            nn.Conv2d(8, 128, 3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.Conv2d(128, 128, 3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.Conv2d(128, 128, 3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d(1)
-        )
-
-        self.fc = nn.Sequential(
-            nn.Linear(128, 256),
-            nn.ReLU(),
-            nn.Linear(256, 128),
-            nn.ReLU(),
-            nn.Linear(128, 1),
-            nn.Sigmoid()
-        )
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.conv1 = nn.Conv2d(channels, channels, 3, padding=1)
+        self.bn2 = nn.BatchNorm2d(channels)
+        self.conv2 = nn.Conv2d(channels, channels, 3, padding=1)
 
     def forward(self, x):
-        x = self.conv(x)
+        residual = x
+        x = torch.relu(self.bn1(x))
+        x = self.conv1(x)
+        x = torch.relu(self.bn2(x))
+        x = self.conv2(x)
+        return x + residual
+
+
+class QuoridorCNN(nn.Module):
+    def __init__(self, channels=128, num_res_blocks=4):
+        super().__init__()
+
+        # Initial conv
+        self.conv_init = nn.Conv2d(8, channels, 3, padding=1)
+        self.bn_init = nn.BatchNorm2d(channels)
+
+        # Residual tower
+        self.res_blocks = nn.ModuleList([
+            ResidualBlock(channels) for _ in range(num_res_blocks)
+        ])
+
+        # Value head
+        self.conv_val = nn.Conv2d(channels, 32, 1)
+        self.bn_val = nn.BatchNorm2d(32)
+        self.fc1 = nn.Linear(32 * 9 * 9, 256)
+        self.fc2 = nn.Linear(256, 1)
+
+    def forward(self, x):
+        # Initial conv
+        x = torch.relu(self.bn_init(self.conv_init(x)))
+
+        # Residual blocks
+        for block in self.res_blocks:
+            x = block(x)
+
+        # Value head
+        x = torch.relu(self.bn_val(self.conv_val(x)))
         x = x.view(x.size(0), -1)
-        return self.fc(x)
+        x = torch.relu(self.fc1(x))
+        x = self.fc2(x)  # Raw logits - use BCEWithLogitsLoss
+        return x
 
 
 # ==================== TRAINING ====================
 
 def generate_imitation_games(num_games, num_threads=32):
-    """Generate games from bot vs bot"""
-    print(f"  Generating {num_games} imitation games...")
+    """Generate training data with PATH DISTANCE ADVANTAGE labels"""
+    print(f"  Generating {num_games} imitation games with path distance labels...")
 
     states = []
     labels = []
@@ -375,44 +396,61 @@ def generate_imitation_games(num_games, num_threads=32):
 
     for g in range(num_games):
         game = QuoridorGame()
-        game_states = []
 
-        while not game.is_over() and len(game_states) < 200:
-            game_states.append(game.encode())
+        while not game.is_over() and len(states) < 50000000:
+            player = game.current_player
+            opponent = 1 - player
 
+            # Get all valid moves
+            moves = game.get_valid_moves()
+            if not moves:
+                break
+
+            # For each move, calculate path distance advantage
+            opp_dist = bot._shortest_path(game, opponent)
+
+            for move in moves:
+                # Calculate my distance after this move
+                test = game.clone()
+                test.positions[player] = move
+                my_dist_after = bot._shortest_path(test, player)
+
+                # Advantage: positive = I'm closer to goal than opponent
+                advantage = (opp_dist - my_dist_after) / 16.0
+
+                # Map to label 0.05-0.95
+                label = max(0.05, min(0.95, 0.5 + advantage * 0.45))
+
+                # Encode state AFTER move (from opponent's perspective)
+                test.current_player = opponent
+                states.append(test.encode())
+                labels.append(label)
+
+            # Execute best move (greedy)
             action = bot.get_action(game)
             if action[0] == 'move':
                 game.make_move(action[1])
             else:
                 game.place_wall(action[1])
 
-        # Label states
-        winner = game.winner if game.winner is not None else 0
-        for i, state in enumerate(game_states):
-            was_p0_turn = (i % 2 == 0)
-            p0_won = (winner == 0)
-            label = 0.9 if (was_p0_turn == p0_won) else 0.1
-            states.append(state)
-            labels.append(label)
-
         if (g + 1) % 2500 == 0:
-            print(f"    Generated {g + 1}/{num_games} games")
+            print(f"    Generated {g + 1}/{num_games} games, {len(states)} samples")
 
     return np.array(states), np.array(labels)
 
 
-def train_model(model, states, labels, epochs, batch_size=512):
+def train_model(model, states, labels, epochs, batch_size=4096, lr=0.001):
     """Train model on data"""
-    print(f"  Training on {len(states)} samples for {epochs} epochs...")
+    print(f"  Training on {len(states)} samples for {epochs} epochs (batch={batch_size})...")
 
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    criterion = nn.BCELoss()
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    criterion = nn.BCEWithLogitsLoss()  # Model outputs raw logits
 
     states_t = torch.FloatTensor(states).to(device)
     labels_t = torch.FloatTensor(labels).unsqueeze(1).to(device)
 
     dataset = torch.utils.data.TensorDataset(states_t, labels_t)
-    loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
 
     model.train()
     for epoch in range(epochs):
@@ -425,8 +463,9 @@ def train_model(model, states, labels, epochs, batch_size=512):
             optimizer.step()
             total_loss += loss.item()
 
-        if (epoch + 1) % 5 == 0:
-            print(f"    Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(loader):.4f}")
+        avg_loss = total_loss / len(loader)
+        if (epoch + 1) % 5 == 0 or epoch == 0:
+            print(f"    Epoch {epoch + 1}/{epochs}, Loss: {avg_loss:.6f}")
 
 
 def cnn_select_action(model, game):
@@ -443,8 +482,10 @@ def cnn_select_action(model, game):
             test.current_player = 1 - test.current_player
 
             state = torch.FloatTensor(test.encode()).unsqueeze(0).to(device)
-            # After our move, it's opponent's turn - minimize their win prob
-            score = 1.0 - model(state).item()
+            logit = model(state).item()
+            prob = torch.sigmoid(torch.tensor(logit)).item()
+            # After our move, it's opponent's turn - minimize their score
+            score = 1.0 - prob
 
             if score > best_score:
                 best_score = score
@@ -463,7 +504,9 @@ def cnn_select_action(model, game):
                 test.current_player = 1 - test.current_player
 
                 state = torch.FloatTensor(test.encode()).unsqueeze(0).to(device)
-                score = 1.0 - model(state).item()
+                logit = model(state).item()
+                prob = torch.sigmoid(torch.tensor(logit)).item()
+                score = 1.0 - prob
 
                 if score > best_score:
                     best_score = score
@@ -576,12 +619,12 @@ def main():
     print("  QUORIDOR CNN TRAINING - PyTorch + CUDA")
     print("=" * 60)
 
-    # Config
-    IMITATION_GAMES = 20000
-    SELF_PLAY_ROUNDS = 10
-    GAMES_PER_ROUND = 3000
-    EPOCHS_INITIAL = 30
-    EPOCHS_PER_ROUND = 10
+    # Config - optimized for H100
+    IMITATION_GAMES = 50000
+    SELF_PLAY_ROUNDS = 15
+    GAMES_PER_ROUND = 5000
+    EPOCHS_INITIAL = 50
+    EPOCHS_PER_ROUND = 15
 
     # Create model
     model = QuoridorCNN().to(device)
