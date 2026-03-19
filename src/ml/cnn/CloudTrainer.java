@@ -38,14 +38,14 @@ public class CloudTrainer {
     // Adjust these based on your cloud instance
 
     private static final int IMITATION_GAMES = 50000;      // Learn from BotBrain
-    private static final int SELF_PLAY_ROUNDS = 10;        // Reduced for faster training
-    private static final int GAMES_PER_ROUND = 1000;       // Reduced for faster training
+    private static final int SELF_PLAY_ROUNDS = 20;        // Self-improvement rounds
+    private static final int GAMES_PER_ROUND = 5000;       // Games per self-play round
     private static final int EPOCHS_INITIAL = 30;          // Initial training epochs
     private static final int EPOCHS_PER_ROUND = 10;        // Epochs per round
     private static final int BATCH_SIZE = 256;             // Larger batch for GPU
     private static final double LEARNING_RATE = 0.001;
     private static final double EXPLORATION_RATE = 0.15;
-    private static final int MAX_WALLS_TO_EVAL = 20;       // Reduced for speed
+    private static final int MAX_WALLS_TO_EVAL = 50;       // More wall evaluation
     private static final int TEST_GAMES = 200;             // Games for win rate test
 
     // Larger network for more capacity
