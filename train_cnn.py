@@ -660,10 +660,10 @@ def main():
     print("  QUORIDOR CNN TRAINING - PyTorch + CUDA")
     print("=" * 60)
 
-    # Config - MAXIMUM SPEED for H100 + 126 CPU cores
-    IMITATION_GAMES = 100000   # 100k games with 126 cores = fast
-    SELF_PLAY_ROUNDS = 20
-    GAMES_PER_ROUND = 10000
+    # Config - balanced for quick results
+    IMITATION_GAMES = 30000
+    SELF_PLAY_ROUNDS = 10
+    GAMES_PER_ROUND = 3000
     EPOCHS_INITIAL = 30
     EPOCHS_PER_ROUND = 10
 
