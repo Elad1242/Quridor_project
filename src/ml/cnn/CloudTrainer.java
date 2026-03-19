@@ -238,72 +238,92 @@ public class CloudTrainer {
     }
 
     /**
-     * Generate imitation learning data from BotBrain games.
-     * The CNN learns to predict which move BotBrain would make.
-     *
-     * Uses BotBrain's built-in randomness (openingRandomMoves + explorationNoise)
-     * to create game variety. Each game creates new BotBrain instances with
-     * different random seeds for unique games.
+     * Generate imitation learning data from BotBrain games - PARALLEL VERSION.
+     * Uses all CPU cores for maximum speed.
      */
     private void generateImitationData(List<INDArray> states, List<INDArray> labels, int numGames) {
-        int progressInterval = numGames / 20;
+        int numThreads = Runtime.getRuntime().availableProcessors();
+        System.out.println("    Using " + numThreads + " threads for parallel game generation");
 
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(numThreads);
+        java.util.concurrent.ConcurrentLinkedQueue<GameResult> results = new java.util.concurrent.ConcurrentLinkedQueue<>();
+        java.util.concurrent.atomic.AtomicInteger completed = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        // Submit all games to thread pool
         for (int g = 0; g < numGames; g++) {
-            GameState state = new GameState();
-            // Use BotBrain's built-in randomness: explorationNoise=0.3, openingRandomMoves=8
-            // Each BotBrain instance gets unique random seed automatically
-            BotBrain bot1 = new BotBrain(0.05, 6);  // 5% noise, 6 random openings
-            BotBrain bot2 = new BotBrain(0.05, 6);  // Much cleaner data!
-            bot1.setSilent(true);
-            bot2.setSilent(true);
-
-            for (int turn = 0; turn < 200 && !state.isGameOver(); turn++) {
-                Player me = state.getCurrentPlayer();
-                int idx = state.getCurrentPlayerIndex();
-                BotBrain bot = (idx == 0) ? bot1 : bot2;
-
-                BotBrain.BotAction action = bot.computeBestAction(state);
-                if (action == null) break;
-
-                // Record state and BotBrain's choice
-                INDArray boardState = BoardEncoder.encode(state);
-
-                // For imitation: record the state and eventual outcome
-                // We'll use value-based imitation (learn position quality)
-                states.add(boardState);
-
-                // Apply action
-                if (action.type == BotBrain.BotAction.Type.MOVE) {
-                    me.setPosition(action.moveTarget);
-                } else {
-                    action.wallToPlace.setOwnerIndex(idx);
-                    state.addWall(action.wallToPlace);
-                    me.setWallsRemaining(me.getWallsRemaining() - 1);
+            executor.submit(() -> {
+                GameResult result = playOneGame();
+                results.add(result);
+                int done = completed.incrementAndGet();
+                if (done % 2500 == 0) {
+                    System.out.println("    Generated " + done + "/" + numGames + " games");
                 }
-
-                state.checkWinCondition();
-                if (!state.isGameOver()) state.nextTurn();
-            }
-
-            // Label all states from this game based on outcome
-            // SIMPLE CLEAR LABELS: winner=0.9, loser=0.1
-            boolean p0Won = state.isGameOver() && state.getWinner() == state.getPlayers()[0];
-            int statesThisGame = states.size() - labels.size();
-
-            for (int i = labels.size(); i < states.size(); i++) {
-                int turnInGame = i - (states.size() - statesThisGame);
-                boolean wasP0Turn = (turnInGame % 2 == 0);
-
-                // Clear signal: winner's positions = 0.9, loser's = 0.1
-                double label = (wasP0Turn == p0Won) ? 0.9 : 0.1;
-
-                labels.add(Nd4j.create(new double[]{label}));
-            }
-
-            if ((g + 1) % progressInterval == 0) {
-                System.out.println("    Generated " + (g + 1) + "/" + numGames + " games (" + states.size() + " samples)");
-            }
+            });
         }
+
+        // Wait for all to complete
+        executor.shutdown();
+        try {
+            executor.awaitTermination(2, java.util.concurrent.TimeUnit.HOURS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        // Collect results
+        for (GameResult result : results) {
+            states.addAll(result.states);
+            labels.addAll(result.labels);
+        }
+        System.out.println("    Total samples: " + states.size());
+    }
+
+    private static class GameResult {
+        List<INDArray> states = new ArrayList<>();
+        List<INDArray> labels = new ArrayList<>();
+    }
+
+    private GameResult playOneGame() {
+        GameResult result = new GameResult();
+        List<INDArray> gameStates = new ArrayList<>();
+
+        GameState state = new GameState();
+        BotBrain bot1 = new BotBrain(0.05, 6);
+        BotBrain bot2 = new BotBrain(0.05, 6);
+        bot1.setSilent(true);
+        bot2.setSilent(true);
+
+        for (int turn = 0; turn < 200 && !state.isGameOver(); turn++) {
+            Player me = state.getCurrentPlayer();
+            int idx = state.getCurrentPlayerIndex();
+            BotBrain bot = (idx == 0) ? bot1 : bot2;
+
+            BotBrain.BotAction action = bot.computeBestAction(state);
+            if (action == null) break;
+
+            gameStates.add(BoardEncoder.encode(state));
+
+            if (action.type == BotBrain.BotAction.Type.MOVE) {
+                me.setPosition(action.moveTarget);
+            } else {
+                action.wallToPlace.setOwnerIndex(idx);
+                state.addWall(action.wallToPlace);
+                me.setWallsRemaining(me.getWallsRemaining() - 1);
+            }
+
+            state.checkWinCondition();
+            if (!state.isGameOver()) state.nextTurn();
+        }
+
+        // Label based on outcome
+        boolean p0Won = state.isGameOver() && state.getWinner() == state.getPlayers()[0];
+        for (int i = 0; i < gameStates.size(); i++) {
+            boolean wasP0Turn = (i % 2 == 0);
+            double label = (wasP0Turn == p0Won) ? 0.9 : 0.1;
+            result.states.add(gameStates.get(i));
+            result.labels.add(Nd4j.create(new double[]{label}));
+        }
+
+        return result;
     }
 
     private void trainImitation(List<INDArray> states, List<INDArray> labels, int epochs) {
