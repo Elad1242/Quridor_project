@@ -15,7 +15,7 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <djl.version>0.27.0</djl.version>
+        <djl.version>0.31.0</djl.version>
         <javafx.version>17.0.17</javafx.version>
     </properties>
 
@@ -46,11 +46,10 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- PyTorch Native CUDA 12.1 (compatible with CUDA 13.0 driver) -->
+        <!-- PyTorch Native Auto - DJL will download correct CUDA version at runtime -->
         <dependency>
             <groupId>ai.djl.pytorch</groupId>
-            <artifactId>pytorch-native-cu121</artifactId>
-            <classifier>linux-x86_64</classifier>
+            <artifactId>pytorch-native-auto</artifactId>
             <scope>runtime</scope>
         </dependency>
 
