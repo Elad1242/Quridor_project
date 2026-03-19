@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Quoridor CNN Training - PyTorch + CUDA
-Works on H100 with CUDA 12.x
+Optimized for H100 with maximum parallelization
 """
 
 import torch
@@ -11,6 +11,14 @@ import numpy as np
 from collections import deque
 import random
 import time
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+import os
+
+# Maximize CPU threads
+NUM_WORKERS = min(mp.cpu_count(), 128)
+print(f"CPU cores available: {mp.cpu_count()}")
+print(f"Using {NUM_WORKERS} worker threads")
 
 # Check GPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -18,6 +26,10 @@ print(f"Using device: {device}")
 if torch.cuda.is_available():
     print(f"GPU: {torch.cuda.get_device_name(0)}")
     print(f"CUDA version: {torch.version.cuda}")
+    # Enable TF32 for faster matmul on H100
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    torch.backends.cudnn.benchmark = True
 
 # ==================== GAME LOGIC ====================
 
@@ -385,82 +397,111 @@ class QuoridorCNN(nn.Module):
 
 # ==================== TRAINING ====================
 
-def generate_imitation_games(num_games, num_threads=32):
-    """Generate training data with PATH DISTANCE ADVANTAGE labels"""
-    print(f"  Generating {num_games} imitation games with path distance labels...")
+def _generate_single_game(seed):
+    """Generate one game's training data (for parallel execution)"""
+    random.seed(seed)
+    np.random.seed(seed)
 
     states = []
     labels = []
-
     bot = SimpleBot(noise=0.05)
+    game = QuoridorGame()
 
-    for g in range(num_games):
-        game = QuoridorGame()
+    while not game.is_over() and len(states) < 500:
+        player = game.current_player
+        opponent = 1 - player
 
-        while not game.is_over() and len(states) < 50000000:
-            player = game.current_player
-            opponent = 1 - player
+        moves = game.get_valid_moves()
+        if not moves:
+            break
 
-            # Get all valid moves
-            moves = game.get_valid_moves()
-            if not moves:
-                break
+        opp_dist = bot._shortest_path(game, opponent)
 
-            # For each move, calculate path distance advantage
-            opp_dist = bot._shortest_path(game, opponent)
+        for move in moves:
+            test = game.clone()
+            test.positions[player] = move
+            my_dist_after = bot._shortest_path(test, player)
 
-            for move in moves:
-                # Calculate my distance after this move
-                test = game.clone()
-                test.positions[player] = move
-                my_dist_after = bot._shortest_path(test, player)
+            advantage = (opp_dist - my_dist_after) / 16.0
+            label = max(0.05, min(0.95, 0.5 + advantage * 0.45))
 
-                # Advantage: positive = I'm closer to goal than opponent
-                advantage = (opp_dist - my_dist_after) / 16.0
+            test.current_player = opponent
+            states.append(test.encode())
+            labels.append(label)
 
-                # Map to label 0.05-0.95
-                label = max(0.05, min(0.95, 0.5 + advantage * 0.45))
+        action = bot.get_action(game)
+        if action[0] == 'move':
+            game.make_move(action[1])
+        else:
+            game.place_wall(action[1])
 
-                # Encode state AFTER move (from opponent's perspective)
-                test.current_player = opponent
-                states.append(test.encode())
-                labels.append(label)
-
-            # Execute best move (greedy)
-            action = bot.get_action(game)
-            if action[0] == 'move':
-                game.make_move(action[1])
-            else:
-                game.place_wall(action[1])
-
-        if (g + 1) % 2500 == 0:
-            print(f"    Generated {g + 1}/{num_games} games, {len(states)} samples")
-
-    return np.array(states), np.array(labels)
+    return states, labels
 
 
-def train_model(model, states, labels, epochs, batch_size=4096, lr=0.001):
-    """Train model on data"""
+def generate_imitation_games(num_games, num_threads=None):
+    """Generate training data with PATH DISTANCE ADVANTAGE labels - PARALLEL"""
+    if num_threads is None:
+        num_threads = NUM_WORKERS
+
+    print(f"  Generating {num_games} games using {num_threads} parallel workers...")
+
+    all_states = []
+    all_labels = []
+
+    # Use ProcessPoolExecutor for true parallelism
+    seeds = [random.randint(0, 2**31) for _ in range(num_games)]
+
+    completed = 0
+    with ProcessPoolExecutor(max_workers=num_threads) as executor:
+        futures = [executor.submit(_generate_single_game, seed) for seed in seeds]
+
+        for future in futures:
+            states, labels = future.result()
+            all_states.extend(states)
+            all_labels.extend(labels)
+            completed += 1
+
+            if completed % 5000 == 0:
+                print(f"    Generated {completed}/{num_games} games, {len(all_states)} samples")
+
+    print(f"    Total: {len(all_states)} samples from {num_games} games")
+    return np.array(all_states), np.array(all_labels)
+
+
+def train_model(model, states, labels, epochs, batch_size=8192, lr=0.002):
+    """Train model with mixed precision for maximum GPU speed"""
     print(f"  Training on {len(states)} samples for {epochs} epochs (batch={batch_size})...")
 
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.BCEWithLogitsLoss()  # Model outputs raw logits
+    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
+    criterion = nn.BCEWithLogitsLoss()
+    scaler = torch.cuda.amp.GradScaler()  # Mixed precision
 
+    # Move data to GPU
     states_t = torch.FloatTensor(states).to(device)
     labels_t = torch.FloatTensor(labels).unsqueeze(1).to(device)
 
     dataset = torch.utils.data.TensorDataset(states_t, labels_t)
-    loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
+    loader = torch.utils.data.DataLoader(
+        dataset, batch_size=batch_size, shuffle=True,
+        num_workers=8, pin_memory=False, drop_last=True
+    )
 
     model.train()
     for epoch in range(epochs):
         total_loss = 0
         for batch_x, batch_y in loader:
-            optimizer.zero_grad()
-            pred = model(batch_x)
-            loss = criterion(pred, batch_y)
-            loss.backward()
-            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+
+            # Mixed precision forward pass
+            with torch.cuda.amp.autocast():
+                pred = model(batch_x)
+                loss = criterion(pred, batch_y)
+
+            # Scaled backward pass
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
             total_loss += loss.item()
 
         avg_loss = total_loss / len(loader)
@@ -619,12 +660,12 @@ def main():
     print("  QUORIDOR CNN TRAINING - PyTorch + CUDA")
     print("=" * 60)
 
-    # Config - optimized for H100
-    IMITATION_GAMES = 50000
-    SELF_PLAY_ROUNDS = 15
-    GAMES_PER_ROUND = 5000
-    EPOCHS_INITIAL = 50
-    EPOCHS_PER_ROUND = 15
+    # Config - MAXIMUM SPEED for H100 + 126 CPU cores
+    IMITATION_GAMES = 100000   # 100k games with 126 cores = fast
+    SELF_PLAY_ROUNDS = 20
+    GAMES_PER_ROUND = 10000
+    EPOCHS_INITIAL = 30
+    EPOCHS_PER_ROUND = 10
 
     # Create model
     model = QuoridorCNN().to(device)
