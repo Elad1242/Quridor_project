@@ -98,11 +98,19 @@ public class DJLTrainer {
 
         // Phase 1: Imitation Learning
         System.out.println("\n▶ PHASE 1: IMITATION LEARNING");
-        System.out.println("  Learning to copy BotBrain's moves...");
 
         List<float[]> states = new ArrayList<>();
         List<Float> labels = new ArrayList<>();
-        generateImitationData(states, labels, IMITATION_GAMES);
+
+        java.io.File dataFile = new java.io.File("imitation_data.bin");
+        if (dataFile.exists()) {
+            System.out.println("  Loading cached imitation data...");
+            loadImitationData(states, labels, dataFile);
+        } else {
+            System.out.println("  Generating imitation data (will be cached for next run)...");
+            generateImitationData(states, labels, IMITATION_GAMES);
+            saveImitationData(states, labels, dataFile);
+        }
 
         // Create network
         model = createModel();
@@ -337,6 +345,37 @@ public class DJLTrainer {
         }
 
         return result;
+    }
+
+    private void saveImitationData(List<float[]> states, List<Float> labels, java.io.File file) {
+        try (java.io.DataOutputStream out = new java.io.DataOutputStream(
+                new java.io.BufferedOutputStream(new java.io.FileOutputStream(file)))) {
+            out.writeInt(states.size());
+            for (int i = 0; i < states.size(); i++) {
+                float[] state = states.get(i);
+                for (float v : state) out.writeFloat(v);
+                out.writeFloat(labels.get(i));
+            }
+            System.out.println("  Saved " + states.size() + " samples to " + file.getName());
+        } catch (Exception e) {
+            System.err.println("  Failed to save data: " + e.getMessage());
+        }
+    }
+
+    private void loadImitationData(List<float[]> states, List<Float> labels, java.io.File file) {
+        try (java.io.DataInputStream in = new java.io.DataInputStream(
+                new java.io.BufferedInputStream(new java.io.FileInputStream(file)))) {
+            int count = in.readInt();
+            for (int i = 0; i < count; i++) {
+                float[] state = new float[8 * 9 * 9];
+                for (int j = 0; j < state.length; j++) state[j] = in.readFloat();
+                states.add(state);
+                labels.add(in.readFloat());
+            }
+            System.out.println("  Loaded " + states.size() + " samples from " + file.getName());
+        } catch (Exception e) {
+            System.err.println("  Failed to load data: " + e.getMessage());
+        }
     }
 
     private void trainModel(List<float[]> states, List<Float> labels, int epochs) {
