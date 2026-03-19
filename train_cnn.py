@@ -438,75 +438,49 @@ def _generate_single_game(seed):
     return states, labels
 
 
-def generate_imitation_games(num_games, num_threads=14):
-    """Generate training data with 14 threads"""
-    print(f"  Generating {num_games} games using {num_threads} threads...")
+def generate_imitation_games(num_games, num_threads=None):
+    """Generate training data - simple and fast"""
+    print(f"  Generating {num_games} games...", flush=True)
 
-    import threading
-    from queue import Queue
-
-    results_queue = Queue()
-    games_per_thread = num_games // num_threads
-
-    def worker(thread_id, n_games):
-        states = []
-        labels = []
-        bot = SimpleBot(noise=0.05)
-
-        for g in range(n_games):
-            game = QuoridorGame()
-
-            while not game.is_over():
-                player = game.current_player
-                opponent = 1 - player
-
-                moves = game.get_valid_moves()
-                if not moves:
-                    break
-
-                opp_dist = bot._shortest_path(game, opponent)
-
-                for move in moves:
-                    test = game.clone()
-                    test.positions[player] = move
-                    my_dist_after = bot._shortest_path(test, player)
-
-                    advantage = (opp_dist - my_dist_after) / 16.0
-                    label = max(0.05, min(0.95, 0.5 + advantage * 0.45))
-
-                    test.current_player = opponent
-                    states.append(test.encode())
-                    labels.append(label)
-
-                action = bot.get_action(game)
-                if action[0] == 'move':
-                    game.make_move(action[1])
-                else:
-                    game.place_wall(action[1])
-
-        results_queue.put((states, labels))
-        print(f"    Thread {thread_id} done: {len(states)} samples")
-
-    # Start threads
-    threads = []
-    for i in range(num_threads):
-        t = threading.Thread(target=worker, args=(i, games_per_thread))
-        t.start()
-        threads.append(t)
-
-    # Wait for all
-    for t in threads:
-        t.join()
-
-    # Collect results
     all_states = []
     all_labels = []
-    while not results_queue.empty():
-        states, labels = results_queue.get()
-        all_states.extend(states)
-        all_labels.extend(labels)
+    bot = SimpleBot(noise=0.05)
 
-    print(f"    Total: {len(all_states)} samples")
+    for g in range(num_games):
+        game = QuoridorGame()
+
+        while not game.is_over():
+            player = game.current_player
+            opponent = 1 - player
+
+            moves = game.get_valid_moves()
+            if not moves:
+                break
+
+            opp_dist = bot._shortest_path(game, opponent)
+
+            for move in moves:
+                test = game.clone()
+                test.positions[player] = move
+                my_dist_after = bot._shortest_path(test, player)
+
+                advantage = (opp_dist - my_dist_after) / 16.0
+                label = max(0.05, min(0.95, 0.5 + advantage * 0.45))
+
+                test.current_player = opponent
+                all_states.append(test.encode())
+                all_labels.append(label)
+
+            action = bot.get_action(game)
+            if action[0] == 'move':
+                game.make_move(action[1])
+            else:
+                game.place_wall(action[1])
+
+        if (g + 1) % 1000 == 0:
+            print(f"    {g + 1}/{num_games} games, {len(all_states)} samples", flush=True)
+
+    print(f"    Total: {len(all_states)} samples", flush=True)
     return np.array(all_states), np.array(all_labels)
 
 
@@ -702,10 +676,10 @@ def main():
     print("  QUORIDOR CNN TRAINING - PyTorch + CUDA")
     print("=" * 60)
 
-    # Config - balanced for quick results
-    IMITATION_GAMES = 30000
+    # Config - fast iteration
+    IMITATION_GAMES = 10000
     SELF_PLAY_ROUNDS = 10
-    GAMES_PER_ROUND = 3000
+    GAMES_PER_ROUND = 2000
     EPOCHS_INITIAL = 30
     EPOCHS_PER_ROUND = 10
 
