@@ -29,6 +29,45 @@ import java.util.*;
  */
 public class PathFinder {
 
+    /**
+     * Simple BFS shortest path from player's current position to their goal.
+     */
+    public static int shortestPath(GameState state, Player player) {
+        return shortestPathFrom(state, player.getPosition(), player.getGoalRow());
+    }
+
+    /**
+     * Simple BFS shortest path from any position to a goal row.
+     */
+    public static int shortestPathFrom(GameState state, Position start, int goalRow) {
+        if (start.getRow() == goalRow) return 0;
+
+        Set<Position> visited = new HashSet<>();
+        Queue<int[]> queue = new LinkedList<>(); // [row, col, distance]
+        queue.add(new int[]{start.getRow(), start.getCol(), 0});
+        visited.add(start);
+
+        int[][] directions = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+
+        while (!queue.isEmpty()) {
+            int[] current = queue.poll();
+            Position currentPos = new Position(current[0], current[1]);
+            int dist = current[2];
+
+            for (int[] dir : directions) {
+                Position next = currentPos.move(dir[0], dir[1]);
+                if (next.isValid() && !visited.contains(next) && !state.isBlocked(currentPos, next)) {
+                    if (next.getRow() == goalRow) {
+                        return dist + 1;
+                    }
+                    visited.add(next);
+                    queue.add(new int[]{next.getRow(), next.getCol(), dist + 1});
+                }
+            }
+        }
+        return 999; // No path (shouldn't happen in valid game)
+    }
+
     // Checks if player can reach goal if a new wall is added
     public static boolean hasPathToGoalWithWall(GameState state, Player player, Wall newWall) {
         Position start = player.getPosition();

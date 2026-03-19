@@ -333,32 +333,33 @@ public class DJLTrainer {
 
         for (int turn = 0; turn < 200 && !state.isGameOver(); turn++) {
             Player me = state.getCurrentPlayer();
+            Player opp = state.getOtherPlayer();
             int idx = state.getCurrentPlayerIndex();
             BotBrain bot = (idx == 0) ? bot1 : bot2;
 
             BotBrain.BotAction action = bot.computeBestAction(state);
             if (action == null) break;
 
-            // POSITIVE: Position AFTER the expert's chosen move (label 0.9)
+            // Evaluate ALL valid moves with path distance advantage
+            List<Position> validMoves = MoveValidator.getValidMoves(state, me);
+            for (Position move : validMoves) {
+                // Calculate path distances after this move
+                int myDistAfter = logic.PathFinder.shortestPathFrom(state, move, me.getGoalRow());
+                int oppDist = logic.PathFinder.shortestPath(state, opp);
+
+                // Advantage: positive = I'm closer, negative = opponent is closer
+                // Range roughly -16 to +16, normalize to 0.1-0.9
+                float advantage = (oppDist - myDistAfter) / 16.0f;
+                float label = Math.max(0.05f, Math.min(0.95f, 0.5f + advantage * 0.45f));
+
+                result.states.add(encodeAfterMove(state, move));
+                result.labels.add(label);
+            }
+
+            // Execute the expert's action
             if (action.type == BotBrain.BotAction.Type.MOVE) {
-                result.states.add(encodeAfterMove(state, action.moveTarget));
-                result.labels.add(0.9f);
-
-                // NEGATIVE: Sample some other moves (label 0.2)
-                List<Position> otherMoves = MoveValidator.getValidMoves(state, me);
-                otherMoves.remove(action.moveTarget);
-                Collections.shuffle(otherMoves, rnd);
-                int negSamples = Math.min(2, otherMoves.size());
-                for (int i = 0; i < negSamples; i++) {
-                    result.states.add(encodeAfterMove(state, otherMoves.get(i)));
-                    result.labels.add(0.2f);
-                }
-
                 me.setPosition(action.moveTarget);
             } else {
-                result.states.add(encodeAfterWall(state, action.wallToPlace));
-                result.labels.add(0.9f);
-
                 action.wallToPlace.setOwnerIndex(idx);
                 state.addWall(action.wallToPlace);
                 me.setWallsRemaining(me.getWallsRemaining() - 1);
