@@ -432,7 +432,8 @@ public class CloudTrainer {
             } else {
                 for (Position move : validMoves) {
                     INDArray after = BoardEncoder.encodeAfterMove(state, move);
-                    double score = predict(after);
+                    // After our move, it's opponent's turn - minimize their win prob
+                    double score = 1.0 - predict(after);
                     if (score > bestScore) {
                         bestScore = score;
                         bestMove = move;
@@ -448,7 +449,8 @@ public class CloudTrainer {
                     }
                     for (Wall wall : walls) {
                         INDArray after = BoardEncoder.encodeAfterWall(state, wall);
-                        double score = predict(after);
+                        // After our wall, it's opponent's turn - minimize their win prob
+                        double score = 1.0 - predict(after);
                         if (score > bestScore) {
                             bestScore = score;
                             bestWall = wall;
@@ -558,7 +560,8 @@ public class CloudTrainer {
 
                     for (Position move : MoveValidator.getValidMoves(state, me)) {
                         INDArray after = BoardEncoder.encodeAfterMove(state, move);
-                        double score = predict(after);
+                        // After our move, it's opponent's turn - minimize their win prob
+                        double score = 1.0 - predict(after);
                         if (score > bestScore) {
                             bestScore = score;
                             bestMove = move;
@@ -574,7 +577,8 @@ public class CloudTrainer {
                         }
                         for (Wall wall : walls) {
                             INDArray after = BoardEncoder.encodeAfterWall(state, wall);
-                            double score = predict(after);
+                            // After our wall, it's opponent's turn - minimize their win prob
+                            double score = 1.0 - predict(after);
                             if (score > bestScore) {
                                 bestScore = score;
                                 bestWall = wall;
