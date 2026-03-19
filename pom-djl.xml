@@ -50,6 +50,7 @@
         <dependency>
             <groupId>ai.djl.pytorch</groupId>
             <artifactId>pytorch-native-auto</artifactId>
+            <version>${djl.version}</version>
             <scope>runtime</scope>
         </dependency>
 
