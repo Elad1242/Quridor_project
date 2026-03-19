@@ -323,14 +323,13 @@ public class DJLTrainer {
 
     private ImitationResult playOneImitationGame() {
         ImitationResult result = new ImitationResult();
+        java.util.concurrent.ThreadLocalRandom rnd = java.util.concurrent.ThreadLocalRandom.current();
+
         GameState state = new GameState();
         BotBrain bot1 = new BotBrain(0.05, 6);
         BotBrain bot2 = new BotBrain(0.05, 6);
         bot1.setSilent(true);
         bot2.setSilent(true);
-
-        List<float[]> gameStates = new ArrayList<>();
-        List<Integer> gamePlayers = new ArrayList<>();
 
         for (int turn = 0; turn < 200 && !state.isGameOver(); turn++) {
             Player me = state.getCurrentPlayer();
@@ -340,12 +339,26 @@ public class DJLTrainer {
             BotBrain.BotAction action = bot.computeBestAction(state);
             if (action == null) break;
 
-            gameStates.add(encodeBoard(state));
-            gamePlayers.add(idx);
-
+            // POSITIVE: Position AFTER the expert's chosen move (label 0.9)
             if (action.type == BotBrain.BotAction.Type.MOVE) {
+                result.states.add(encodeAfterMove(state, action.moveTarget));
+                result.labels.add(0.9f);
+
+                // NEGATIVE: Sample some other moves (label 0.2)
+                List<Position> otherMoves = MoveValidator.getValidMoves(state, me);
+                otherMoves.remove(action.moveTarget);
+                Collections.shuffle(otherMoves, rnd);
+                int negSamples = Math.min(2, otherMoves.size());
+                for (int i = 0; i < negSamples; i++) {
+                    result.states.add(encodeAfterMove(state, otherMoves.get(i)));
+                    result.labels.add(0.2f);
+                }
+
                 me.setPosition(action.moveTarget);
             } else {
+                result.states.add(encodeAfterWall(state, action.wallToPlace));
+                result.labels.add(0.9f);
+
                 action.wallToPlace.setOwnerIndex(idx);
                 state.addWall(action.wallToPlace);
                 me.setWallsRemaining(me.getWallsRemaining() - 1);
@@ -353,16 +366,6 @@ public class DJLTrainer {
 
             state.checkWinCondition();
             if (!state.isGameOver()) state.nextTurn();
-        }
-
-        // Label based on outcome - clear 0.9/0.1 labels
-        boolean p0Won = state.isGameOver() && state.getWinner() == state.getPlayers()[0];
-
-        for (int i = 0; i < gameStates.size(); i++) {
-            int player = gamePlayers.get(i);
-            float label = (player == 0) == p0Won ? 0.9f : 0.1f;
-            result.states.add(gameStates.get(i));
-            result.labels.add(label);
         }
 
         return result;
