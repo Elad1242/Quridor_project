@@ -40,9 +40,9 @@ public class CloudTrainer {
     private static final int IMITATION_GAMES = 50000;      // Learn from BotBrain
     private static final int SELF_PLAY_ROUNDS = 20;        // Self-improvement rounds
     private static final int GAMES_PER_ROUND = 5000;       // Games per self-play round
-    private static final int EPOCHS_INITIAL = 30;          // Initial training epochs
-    private static final int EPOCHS_PER_ROUND = 10;        // Epochs per round
-    private static final int BATCH_SIZE = 256;             // Larger batch for GPU
+    private static final int EPOCHS_INITIAL = 50;          // Initial training epochs (GPU intensive)
+    private static final int EPOCHS_PER_ROUND = 15;        // Epochs per round (GPU intensive)
+    private static final int BATCH_SIZE = 512;             // Larger batch for GPU utilization
     private static final double LEARNING_RATE = 0.001;
     private static final double EXPLORATION_RATE = 0.15;
     private static final int MAX_WALLS_TO_EVAL = 50;       // More wall evaluation
@@ -360,91 +360,121 @@ public class CloudTrainer {
         }
     }
 
+    /**
+     * Generate self-play data - PARALLEL VERSION.
+     * Uses all CPU cores. Model.output() is thread-safe for inference.
+     */
     private void generateSelfPlayData(List<INDArray> states, List<Double> labels, int numGames) {
-        int progressInterval = Math.max(1, numGames / 10);
+        int numThreads = Runtime.getRuntime().availableProcessors();
+        System.out.println("    Using " + numThreads + " threads for parallel self-play");
+
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(numThreads);
+        java.util.concurrent.ConcurrentLinkedQueue<SelfPlayResult> results = new java.util.concurrent.ConcurrentLinkedQueue<>();
+        java.util.concurrent.atomic.AtomicInteger completed = new java.util.concurrent.atomic.AtomicInteger(0);
 
         for (int g = 0; g < numGames; g++) {
-            GameState state = new GameState();
-
-            List<INDArray> p0States = new ArrayList<>();
-            List<INDArray> p1States = new ArrayList<>();
-
-            for (int turn = 0; turn < 200 && !state.isGameOver(); turn++) {
-                Player me = state.getCurrentPlayer();
-                int idx = state.getCurrentPlayerIndex();
-
-                INDArray encoded = BoardEncoder.encode(state);
-                if (idx == 0) p0States.add(encoded);
-                else p1States.add(encoded);
-
-                // CNN plays with exploration
-                boolean explore = random.nextDouble() < EXPLORATION_RATE;
-                Position bestMove = null;
-                Wall bestWall = null;
-                double bestScore = Double.NEGATIVE_INFINITY;
-                boolean isMove = true;
-
-                List<Position> validMoves = MoveValidator.getValidMoves(state, me);
-
-                if (explore && !validMoves.isEmpty()) {
-                    bestMove = validMoves.get(random.nextInt(validMoves.size()));
-                } else {
-                    for (Position move : validMoves) {
-                        INDArray after = BoardEncoder.encodeAfterMove(state, move);
-                        double score = predict(after);
-                        if (score > bestScore) {
-                            bestScore = score;
-                            bestMove = move;
-                            isMove = true;
-                        }
-                    }
-
-                    if (me.getWallsRemaining() > 0) {
-                        List<Wall> walls = getValidWalls(state);
-                        if (walls.size() > MAX_WALLS_TO_EVAL) {
-                            Collections.shuffle(walls, random);
-                            walls = walls.subList(0, MAX_WALLS_TO_EVAL);
-                        }
-                        for (Wall wall : walls) {
-                            INDArray after = BoardEncoder.encodeAfterWall(state, wall);
-                            double score = predict(after);
-                            if (score > bestScore) {
-                                bestScore = score;
-                                bestWall = wall;
-                                isMove = false;
-                            }
-                        }
-                    }
+            executor.submit(() -> {
+                SelfPlayResult result = playOneSelfPlayGame();
+                results.add(result);
+                int done = completed.incrementAndGet();
+                if (done % 1000 == 0) {
+                    System.out.println("    Self-play: " + done + "/" + numGames);
                 }
+            });
+        }
 
-                if (isMove && bestMove != null) {
-                    me.setPosition(bestMove);
-                } else if (bestWall != null) {
-                    bestWall.setOwnerIndex(idx);
-                    state.addWall(bestWall);
-                    me.setWallsRemaining(me.getWallsRemaining() - 1);
-                } else if (bestMove != null) {
-                    me.setPosition(bestMove);
-                }
+        executor.shutdown();
+        try {
+            executor.awaitTermination(2, java.util.concurrent.TimeUnit.HOURS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
 
-                state.checkWinCondition();
-                if (!state.isGameOver()) state.nextTurn();
-            }
-
-            // Label based on outcome
-            labelGameStates(states, labels, p0States, p1States, state);
-
-            if ((g + 1) % progressInterval == 0) {
-                System.out.println("    Self-play: " + (g + 1) + "/" + numGames);
-            }
+        // Collect results
+        for (SelfPlayResult result : results) {
+            states.addAll(result.states);
+            labels.addAll(result.labels);
         }
     }
 
-    private void labelGameStates(List<INDArray> states, List<Double> labels,
-                                  List<INDArray> p0States, List<INDArray> p1States,
-                                  GameState finalState) {
-        boolean p0Won = finalState.isGameOver() && finalState.getWinner() == finalState.getPlayers()[0];
-        boolean draw = !finalState.isGameOver() || finalState.getWinner() == null;
+    private static class SelfPlayResult {
+        List<INDArray> states = new ArrayList<>();
+        List<Double> labels = new ArrayList<>();
+    }
+
+    private SelfPlayResult playOneSelfPlayGame() {
+        SelfPlayResult result = new SelfPlayResult();
+        java.util.concurrent.ThreadLocalRandom rnd = java.util.concurrent.ThreadLocalRandom.current();
+
+        GameState state = new GameState();
+        List<INDArray> p0States = new ArrayList<>();
+        List<INDArray> p1States = new ArrayList<>();
+
+        for (int turn = 0; turn < 200 && !state.isGameOver(); turn++) {
+            Player me = state.getCurrentPlayer();
+            int idx = state.getCurrentPlayerIndex();
+
+            INDArray encoded = BoardEncoder.encode(state);
+            if (idx == 0) p0States.add(encoded);
+            else p1States.add(encoded);
+
+            // CNN plays with exploration
+            boolean explore = rnd.nextDouble() < EXPLORATION_RATE;
+            Position bestMove = null;
+            Wall bestWall = null;
+            double bestScore = Double.NEGATIVE_INFINITY;
+            boolean isMove = true;
+
+            List<Position> validMoves = MoveValidator.getValidMoves(state, me);
+
+            if (explore && !validMoves.isEmpty()) {
+                bestMove = validMoves.get(rnd.nextInt(validMoves.size()));
+            } else {
+                for (Position move : validMoves) {
+                    INDArray after = BoardEncoder.encodeAfterMove(state, move);
+                    double score = predict(after);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMove = move;
+                        isMove = true;
+                    }
+                }
+
+                if (me.getWallsRemaining() > 0) {
+                    List<Wall> walls = getValidWalls(state);
+                    if (walls.size() > MAX_WALLS_TO_EVAL) {
+                        Collections.shuffle(walls, rnd);
+                        walls = walls.subList(0, MAX_WALLS_TO_EVAL);
+                    }
+                    for (Wall wall : walls) {
+                        INDArray after = BoardEncoder.encodeAfterWall(state, wall);
+                        double score = predict(after);
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestWall = wall;
+                            isMove = false;
+                        }
+                    }
+                }
+            }
+
+            if (isMove && bestMove != null) {
+                me.setPosition(bestMove);
+            } else if (bestWall != null) {
+                bestWall.setOwnerIndex(idx);
+                state.addWall(bestWall);
+                me.setWallsRemaining(me.getWallsRemaining() - 1);
+            } else if (bestMove != null) {
+                me.setPosition(bestMove);
+            }
+
+            state.checkWinCondition();
+            if (!state.isGameOver()) state.nextTurn();
+        }
+
+        // Label based on outcome
+        boolean p0Won = state.isGameOver() && state.getWinner() == state.getPlayers()[0];
+        boolean draw = !state.isGameOver() || state.getWinner() == null;
         double discount = 0.97;
 
         int n0 = p0States.size();
@@ -452,8 +482,8 @@ public class CloudTrainer {
             double weight = Math.pow(discount, n0 - 1 - i);
             double baseLabel = draw ? 0.5 : (p0Won ? 0.8 : 0.2);
             double label = 0.5 + (baseLabel - 0.5) * weight;
-            states.add(p0States.get(i));
-            labels.add(Math.max(0.05, Math.min(0.95, label)));
+            result.states.add(p0States.get(i));
+            result.labels.add(Math.max(0.05, Math.min(0.95, label)));
         }
 
         int n1 = p1States.size();
@@ -461,9 +491,11 @@ public class CloudTrainer {
             double weight = Math.pow(discount, n1 - 1 - i);
             double baseLabel = draw ? 0.5 : (p0Won ? 0.2 : 0.8);
             double label = 0.5 + (baseLabel - 0.5) * weight;
-            states.add(p1States.get(i));
-            labels.add(Math.max(0.05, Math.min(0.95, label)));
+            result.states.add(p1States.get(i));
+            result.labels.add(Math.max(0.05, Math.min(0.95, label)));
         }
+
+        return result;
     }
 
     private void trainValue(List<INDArray> states, List<Double> labels, int epochs) {
