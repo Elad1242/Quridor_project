@@ -46,14 +46,7 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- PyTorch Native CUDA 12.1 for H100 -->
-        <dependency>
-            <groupId>ai.djl.pytorch</groupId>
-            <artifactId>pytorch-native-cu121</artifactId>
-            <classifier>linux-x86_64</classifier>
-            <version>2.1.1</version>
-            <scope>runtime</scope>
-        </dependency>
+        <!-- Let DJL auto-download correct PyTorch native at runtime -->
 
         <!-- JavaFX -->
         <dependency>
