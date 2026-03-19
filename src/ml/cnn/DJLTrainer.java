@@ -259,8 +259,8 @@ public class DJLTrainer {
 
         for (int g = 0; g < numGames; g++) {
             GameState state = new GameState();
-            BotBrain bot1 = new BotBrain(0.3, 8);
-            BotBrain bot2 = new BotBrain(0.3, 8);
+            BotBrain bot1 = new BotBrain(0.05, 6);
+            BotBrain bot2 = new BotBrain(0.05, 6);
             bot1.setSilent(true);
             bot2.setSilent(true);
 
@@ -290,20 +290,15 @@ public class DJLTrainer {
                 if (!state.isGameOver()) state.nextTurn();
             }
 
-            // Label based on outcome
+            // Label based on outcome - clear 0.9/0.1 labels
             boolean p0Won = state.isGameOver() && state.getWinner() == state.getPlayers()[0];
-            int totalTurns = gameStates.size();
 
             for (int i = 0; i < gameStates.size(); i++) {
                 int player = gamePlayers.get(i);
-                double progress = (double) i / Math.max(1, totalTurns);
-                double turnWeight = 0.5 + 0.5 * progress;
-
-                double baseLabel = (player == 0) == p0Won ? 0.8 : 0.2;
-                double weightedLabel = 0.5 + (baseLabel - 0.5) * turnWeight;
-
+                // Clear labels: winner's states = 0.9, loser's states = 0.1
+                float label = (player == 0) == p0Won ? 0.9f : 0.1f;
                 states.add(gameStates.get(i));
-                labels.add((float) weightedLabel);
+                labels.add(label);
             }
 
             if ((g + 1) % progressInterval == 0) {
@@ -414,7 +409,8 @@ public class DJLTrainer {
                 } else {
                     for (Position move : validMoves) {
                         float[] after = encodeAfterMove(state, move);
-                        double score = predict(after);
+                        // After our move, it's opponent's turn - minimize their win prob
+                        double score = 1.0 - predict(after);
                         if (score > bestScore) {
                             bestScore = score;
                             bestMove = move;
@@ -430,7 +426,8 @@ public class DJLTrainer {
                         }
                         for (Wall wall : walls) {
                             float[] after = encodeAfterWall(state, wall);
-                            double score = predict(after);
+                            // After our wall, it's opponent's turn - minimize their win prob
+                            double score = 1.0 - predict(after);
                             if (score > bestScore) {
                                 bestScore = score;
                                 bestWall = wall;
@@ -520,7 +517,8 @@ public class DJLTrainer {
 
                     for (Position move : MoveValidator.getValidMoves(state, me)) {
                         float[] after = encodeAfterMove(state, move);
-                        double score = predict(after);
+                        // After our move, it's opponent's turn - minimize their win prob
+                        double score = 1.0 - predict(after);
                         if (score > bestScore) {
                             bestScore = score;
                             bestMove = move;
@@ -536,7 +534,8 @@ public class DJLTrainer {
                         }
                         for (Wall wall : walls) {
                             float[] after = encodeAfterWall(state, wall);
-                            double score = predict(after);
+                            // After our wall, it's opponent's turn - minimize their win prob
+                            double score = 1.0 - predict(after);
                             if (score > bestScore) {
                                 bestScore = score;
                                 bestWall = wall;
