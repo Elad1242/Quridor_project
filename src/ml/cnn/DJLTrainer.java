@@ -57,7 +57,7 @@ public class DJLTrainer {
     private static final int EPOCHS_INITIAL = 50;          // More epochs for better convergence
     private static final int EPOCHS_PER_ROUND = 15;
     private static final int BATCH_SIZE = 4096;  // Max batch for H100 80GB - full GPU power
-    private static final float LEARNING_RATE = 0.0005f;    // Lower LR for stable convergence
+    private static final float LEARNING_RATE = 0.002f;     // Higher LR to break out of plateau
     private static final float EXPLORATION_RATE = 0.15f;
     private static final int MAX_WALLS_TO_EVAL = 50;
     private static final int TEST_GAMES = 200;
