@@ -54,10 +54,10 @@ public class DJLTrainer {
     private static final int IMITATION_GAMES = 50000;
     private static final int SELF_PLAY_ROUNDS = 20;
     private static final int GAMES_PER_ROUND = 5000;
-    private static final int EPOCHS_INITIAL = 30;
-    private static final int EPOCHS_PER_ROUND = 10;
+    private static final int EPOCHS_INITIAL = 50;          // More epochs for better convergence
+    private static final int EPOCHS_PER_ROUND = 15;
     private static final int BATCH_SIZE = 1024;  // Large batch for H100 80GB
-    private static final float LEARNING_RATE = 0.001f;
+    private static final float LEARNING_RATE = 0.0005f;    // Lower LR for stable convergence
     private static final float EXPLORATION_RATE = 0.15f;
     private static final int MAX_WALLS_TO_EVAL = 50;
     private static final int TEST_GAMES = 200;
