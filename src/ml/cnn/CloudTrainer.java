@@ -287,8 +287,8 @@ public class CloudTrainer {
         List<INDArray> gameStates = new ArrayList<>();
 
         GameState state = new GameState();
-        BotBrain bot1 = new BotBrain(0.05, 3);
-        BotBrain bot2 = new BotBrain(0.05, 3);
+        BotBrain bot1 = new BotBrain(0.05, 6);
+        BotBrain bot2 = new BotBrain(0.05, 6);
         bot1.setSilent(true);
         bot2.setSilent(true);
 
