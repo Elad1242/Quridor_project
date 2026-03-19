@@ -438,33 +438,49 @@ def _generate_single_game(seed):
     return states, labels
 
 
-def generate_imitation_games(num_games, num_threads=None):
-    """Generate training data with PATH DISTANCE ADVANTAGE labels - PARALLEL"""
-    if num_threads is None:
-        num_threads = NUM_WORKERS
-
-    print(f"  Generating {num_games} games using {num_threads} parallel workers...")
+def generate_imitation_games(num_games, num_threads=64):
+    """Generate training data with PATH DISTANCE ADVANTAGE labels - FAST SERIAL"""
+    print(f"  Generating {num_games} games...")
 
     all_states = []
     all_labels = []
+    bot = SimpleBot(noise=0.05)
 
-    # Use ProcessPoolExecutor for true parallelism
-    seeds = [random.randint(0, 2**31) for _ in range(num_games)]
+    for g in range(num_games):
+        game = QuoridorGame()
 
-    completed = 0
-    with ProcessPoolExecutor(max_workers=num_threads) as executor:
-        futures = [executor.submit(_generate_single_game, seed) for seed in seeds]
+        while not game.is_over() and len(all_states) < 50000000:
+            player = game.current_player
+            opponent = 1 - player
 
-        for future in futures:
-            states, labels = future.result()
-            all_states.extend(states)
-            all_labels.extend(labels)
-            completed += 1
+            moves = game.get_valid_moves()
+            if not moves:
+                break
 
-            if completed % 5000 == 0:
-                print(f"    Generated {completed}/{num_games} games, {len(all_states)} samples")
+            opp_dist = bot._shortest_path(game, opponent)
 
-    print(f"    Total: {len(all_states)} samples from {num_games} games")
+            for move in moves:
+                test = game.clone()
+                test.positions[player] = move
+                my_dist_after = bot._shortest_path(test, player)
+
+                advantage = (opp_dist - my_dist_after) / 16.0
+                label = max(0.05, min(0.95, 0.5 + advantage * 0.45))
+
+                test.current_player = opponent
+                all_states.append(test.encode())
+                all_labels.append(label)
+
+            action = bot.get_action(game)
+            if action[0] == 'move':
+                game.make_move(action[1])
+            else:
+                game.place_wall(action[1])
+
+        if (g + 1) % 2000 == 0:
+            print(f"    Generated {g + 1}/{num_games} games, {len(all_states)} samples")
+
+    print(f"    Total: {len(all_states)} samples")
     return np.array(all_states), np.array(all_labels)
 
 
