@@ -255,56 +255,88 @@ public class DJLTrainer {
     }
 
     private void generateImitationData(List<float[]> states, List<Float> labels, int numGames) {
-        int progressInterval = numGames / 20;
+        int numThreads = Runtime.getRuntime().availableProcessors();
+        System.out.println("    Using " + numThreads + " threads for parallel game generation");
+
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(numThreads);
+        java.util.concurrent.ConcurrentLinkedQueue<ImitationResult> results = new java.util.concurrent.ConcurrentLinkedQueue<>();
+        java.util.concurrent.atomic.AtomicInteger completed = new java.util.concurrent.atomic.AtomicInteger(0);
 
         for (int g = 0; g < numGames; g++) {
-            GameState state = new GameState();
-            BotBrain bot1 = new BotBrain(0.05, 6);
-            BotBrain bot2 = new BotBrain(0.05, 6);
-            bot1.setSilent(true);
-            bot2.setSilent(true);
-
-            List<float[]> gameStates = new ArrayList<>();
-            List<Integer> gamePlayers = new ArrayList<>();
-
-            for (int turn = 0; turn < 200 && !state.isGameOver(); turn++) {
-                Player me = state.getCurrentPlayer();
-                int idx = state.getCurrentPlayerIndex();
-                BotBrain bot = (idx == 0) ? bot1 : bot2;
-
-                BotBrain.BotAction action = bot.computeBestAction(state);
-                if (action == null) break;
-
-                gameStates.add(encodeBoard(state));
-                gamePlayers.add(idx);
-
-                if (action.type == BotBrain.BotAction.Type.MOVE) {
-                    me.setPosition(action.moveTarget);
-                } else {
-                    action.wallToPlace.setOwnerIndex(idx);
-                    state.addWall(action.wallToPlace);
-                    me.setWallsRemaining(me.getWallsRemaining() - 1);
+            executor.submit(() -> {
+                ImitationResult result = playOneImitationGame();
+                results.add(result);
+                int done = completed.incrementAndGet();
+                if (done % 2500 == 0) {
+                    System.out.println("    Generated " + done + "/" + numGames + " games");
                 }
-
-                state.checkWinCondition();
-                if (!state.isGameOver()) state.nextTurn();
-            }
-
-            // Label based on outcome - clear 0.9/0.1 labels
-            boolean p0Won = state.isGameOver() && state.getWinner() == state.getPlayers()[0];
-
-            for (int i = 0; i < gameStates.size(); i++) {
-                int player = gamePlayers.get(i);
-                // Clear labels: winner's states = 0.9, loser's states = 0.1
-                float label = (player == 0) == p0Won ? 0.9f : 0.1f;
-                states.add(gameStates.get(i));
-                labels.add(label);
-            }
-
-            if ((g + 1) % progressInterval == 0) {
-                System.out.println("    Generated " + (g + 1) + "/" + numGames + " games (" + states.size() + " samples)");
-            }
+            });
         }
+
+        executor.shutdown();
+        try {
+            executor.awaitTermination(4, java.util.concurrent.TimeUnit.HOURS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        for (ImitationResult result : results) {
+            states.addAll(result.states);
+            labels.addAll(result.labels);
+        }
+        System.out.println("    Total samples: " + states.size());
+    }
+
+    private static class ImitationResult {
+        List<float[]> states = new ArrayList<>();
+        List<Float> labels = new ArrayList<>();
+    }
+
+    private ImitationResult playOneImitationGame() {
+        ImitationResult result = new ImitationResult();
+        GameState state = new GameState();
+        BotBrain bot1 = new BotBrain(0.05, 6);
+        BotBrain bot2 = new BotBrain(0.05, 6);
+        bot1.setSilent(true);
+        bot2.setSilent(true);
+
+        List<float[]> gameStates = new ArrayList<>();
+        List<Integer> gamePlayers = new ArrayList<>();
+
+        for (int turn = 0; turn < 200 && !state.isGameOver(); turn++) {
+            Player me = state.getCurrentPlayer();
+            int idx = state.getCurrentPlayerIndex();
+            BotBrain bot = (idx == 0) ? bot1 : bot2;
+
+            BotBrain.BotAction action = bot.computeBestAction(state);
+            if (action == null) break;
+
+            gameStates.add(encodeBoard(state));
+            gamePlayers.add(idx);
+
+            if (action.type == BotBrain.BotAction.Type.MOVE) {
+                me.setPosition(action.moveTarget);
+            } else {
+                action.wallToPlace.setOwnerIndex(idx);
+                state.addWall(action.wallToPlace);
+                me.setWallsRemaining(me.getWallsRemaining() - 1);
+            }
+
+            state.checkWinCondition();
+            if (!state.isGameOver()) state.nextTurn();
+        }
+
+        // Label based on outcome - clear 0.9/0.1 labels
+        boolean p0Won = state.isGameOver() && state.getWinner() == state.getPlayers()[0];
+
+        for (int i = 0; i < gameStates.size(); i++) {
+            int player = gamePlayers.get(i);
+            float label = (player == 0) == p0Won ? 0.9f : 0.1f;
+            result.states.add(gameStates.get(i));
+            result.labels.add(label);
+        }
+
+        return result;
     }
 
     private void trainModel(List<float[]> states, List<Float> labels, int epochs) {
