@@ -46,11 +46,12 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- PyTorch Native Auto - DJL will download correct CUDA version at runtime -->
+        <!-- PyTorch Native CUDA 12.1 for H100 -->
         <dependency>
             <groupId>ai.djl.pytorch</groupId>
-            <artifactId>pytorch-native-auto</artifactId>
-            <version>${djl.version}</version>
+            <artifactId>pytorch-native-cu121</artifactId>
+            <classifier>linux-x86_64</classifier>
+            <version>2.1.1</version>
             <scope>runtime</scope>
         </dependency>
 
