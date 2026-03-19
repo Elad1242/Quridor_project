@@ -10,7 +10,10 @@ import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.Activation;
+import ai.djl.nn.Block;
 import ai.djl.nn.Blocks;
+import ai.djl.nn.LambdaBlock;
+import ai.djl.nn.ParallelBlock;
 import ai.djl.nn.SequentialBlock;
 import ai.djl.nn.convolutional.Conv2d;
 import ai.djl.nn.core.Linear;
@@ -215,7 +218,7 @@ public class DJLTrainer {
 
         SequentialBlock block = new SequentialBlock();
 
-        // Conv block 1: 8 -> 128 filters
+        // Initial conv: 8 channels -> CONV_FILTERS
         block.add(Conv2d.builder()
                 .setKernelShape(new Shape(3, 3))
                 .optPadding(new Shape(1, 1))
@@ -224,23 +227,10 @@ public class DJLTrainer {
         block.add(BatchNorm.builder().build());
         block.add(Activation::relu);
 
-        // Conv block 2
-        block.add(Conv2d.builder()
-                .setKernelShape(new Shape(3, 3))
-                .optPadding(new Shape(1, 1))
-                .setFilters(CONV_FILTERS)
-                .build());
-        block.add(BatchNorm.builder().build());
-        block.add(Activation::relu);
-
-        // Conv block 3
-        block.add(Conv2d.builder()
-                .setKernelShape(new Shape(3, 3))
-                .optPadding(new Shape(1, 1))
-                .setFilters(CONV_FILTERS)
-                .build());
-        block.add(BatchNorm.builder().build());
-        block.add(Activation::relu);
+        // Add 4 residual blocks for better gradient flow
+        for (int i = 0; i < 4; i++) {
+            block.add(createResidualBlock(CONV_FILTERS));
+        }
 
         // Global average pooling
         block.add(Pool.globalAvgPool2dBlock());
@@ -248,18 +238,49 @@ public class DJLTrainer {
         // Flatten
         block.add(Blocks.batchFlattenBlock());
 
-        // Dense layers
+        // Dense layers with dropout
         block.add(Linear.builder().setUnits(DENSE_UNITS).build());
         block.add(Activation::relu);
         block.add(Linear.builder().setUnits(DENSE_UNITS / 2).build());
         block.add(Activation::relu);
 
-        // Output (sigmoid for binary classification)
+        // Output - NO sigmoid here! Loss function will apply it
         block.add(Linear.builder().setUnits(1).build());
-        block.add(Activation::sigmoid);
 
         model.setBlock(block);
         return model;
+    }
+
+    /**
+     * Creates a residual block: x + conv(relu(bn(conv(relu(bn(x))))))
+     * Skip connection helps gradients flow and enables deeper networks.
+     */
+    private Block createResidualBlock(int filters) {
+        // Main path: BN -> ReLU -> Conv -> BN -> ReLU -> Conv
+        SequentialBlock mainPath = new SequentialBlock();
+        mainPath.add(BatchNorm.builder().build());
+        mainPath.add(Activation::relu);
+        mainPath.add(Conv2d.builder()
+                .setKernelShape(new Shape(3, 3))
+                .optPadding(new Shape(1, 1))
+                .setFilters(filters)
+                .build());
+        mainPath.add(BatchNorm.builder().build());
+        mainPath.add(Activation::relu);
+        mainPath.add(Conv2d.builder()
+                .setKernelShape(new Shape(3, 3))
+                .optPadding(new Shape(1, 1))
+                .setFilters(filters)
+                .build());
+
+        // Skip connection (identity)
+        Block skipPath = new LambdaBlock(ndList -> ndList);
+
+        // Combine: output = mainPath(x) + x
+        return new ParallelBlock(
+                list -> new NDList(list.get(0).singletonOrThrow().add(list.get(1).singletonOrThrow())),
+                Arrays.asList(mainPath, skipPath)
+        );
     }
 
     private void generateImitationData(List<float[]> states, List<Float> labels, int numGames) {
@@ -551,7 +572,9 @@ public class DJLTrainer {
                     new NDList(input),
                     false
             ).singletonOrThrow();
-            return output.getFloat(0);
+            // Apply sigmoid manually since model outputs raw logits now
+            float logit = output.getFloat(0);
+            return 1.0 / (1.0 + Math.exp(-logit));
         }
     }
 
@@ -643,6 +666,14 @@ public class DJLTrainer {
     }
 
     // Board encoding - 8 channels, 9x9 board
+    // Channel 0: Current player position
+    // Channel 1: Opponent position
+    // Channel 2: Horizontal walls
+    // Channel 3: Vertical walls
+    // Channel 4: Current player goal row
+    // Channel 5: Opponent goal row
+    // Channel 6: Current player walls remaining (normalized)
+    // Channel 7: Opponent walls remaining (normalized)
     private float[] encodeBoard(GameState state) {
         float[] encoded = new float[8 * 9 * 9];
 
@@ -657,18 +688,6 @@ public class DJLTrainer {
         // Channel 1: Opponent position
         Position oppPos = (current == 0) ? p1.getPosition() : p0.getPosition();
         encoded[1 * 81 + oppPos.getRow() * 9 + oppPos.getCol()] = 1.0f;
-
-        // Channel 2: My goal row
-        int myGoal = (current == 0) ? 0 : 8;
-        for (int c = 0; c < 9; c++) {
-            encoded[2 * 81 + myGoal * 9 + c] = 1.0f;
-        }
-
-        // Channel 3: Opponent goal row
-        int oppGoal = (current == 0) ? 8 : 0;
-        for (int c = 0; c < 9; c++) {
-            encoded[3 * 81 + oppGoal * 9 + c] = 1.0f;
-        }
 
         // Channel 2: Horizontal walls
         // Channel 3: Vertical walls
@@ -689,7 +708,19 @@ public class DJLTrainer {
             }
         }
 
-        // Channel 6: My walls remaining (normalized)
+        // Channel 4: Current player goal row
+        int myGoal = (current == 0) ? 0 : 8;
+        for (int c = 0; c < 9; c++) {
+            encoded[4 * 81 + myGoal * 9 + c] = 1.0f;
+        }
+
+        // Channel 5: Opponent goal row
+        int oppGoal = (current == 0) ? 8 : 0;
+        for (int c = 0; c < 9; c++) {
+            encoded[5 * 81 + oppGoal * 9 + c] = 1.0f;
+        }
+
+        // Channel 6: Current player walls remaining (normalized)
         int myWalls = (current == 0) ? p0.getWallsRemaining() : p1.getWallsRemaining();
         float myWallsNorm = myWalls / 10.0f;
         for (int i = 0; i < 81; i++) {
