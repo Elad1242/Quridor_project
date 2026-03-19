@@ -252,8 +252,8 @@ public class CloudTrainer {
             GameState state = new GameState();
             // Use BotBrain's built-in randomness: explorationNoise=0.3, openingRandomMoves=8
             // Each BotBrain instance gets unique random seed automatically
-            BotBrain bot1 = new BotBrain(0.3, 8);
-            BotBrain bot2 = new BotBrain(0.3, 8);
+            BotBrain bot1 = new BotBrain(0.05, 6);  // 5% noise, 6 random openings
+            BotBrain bot2 = new BotBrain(0.05, 6);  // Much cleaner data!
             bot1.setSilent(true);
             bot2.setSilent(true);
 
