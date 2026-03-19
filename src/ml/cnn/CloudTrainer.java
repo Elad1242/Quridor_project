@@ -286,18 +286,16 @@ public class CloudTrainer {
             }
 
             // Label all states from this game based on outcome
+            // SIMPLE CLEAR LABELS: winner=0.9, loser=0.1
             boolean p0Won = state.isGameOver() && state.getWinner() == state.getPlayers()[0];
             int statesThisGame = states.size() - labels.size();
 
-            // Alternate labeling based on whose turn it was
             for (int i = labels.size(); i < states.size(); i++) {
                 int turnInGame = i - (states.size() - statesThisGame);
                 boolean wasP0Turn = (turnInGame % 2 == 0);
-                double label = (wasP0Turn == p0Won) ? 0.8 : 0.2;
 
-                // Temporal weighting
-                double progress = (double) turnInGame / statesThisGame;
-                label = 0.5 + (label - 0.5) * (0.5 + 0.5 * progress);
+                // Clear signal: winner's positions = 0.9, loser's = 0.1
+                double label = (wasP0Turn == p0Won) ? 0.9 : 0.1;
 
                 labels.add(Nd4j.create(new double[]{label}));
             }
