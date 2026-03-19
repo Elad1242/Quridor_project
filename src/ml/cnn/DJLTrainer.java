@@ -343,18 +343,7 @@ public class DJLTrainer {
         System.out.println("  Training on " + states.size() + " samples for " + epochs + " epochs...");
 
         try (NDManager trainManager = manager.newSubManager()) {
-            // Convert to NDArrays
             int n = states.size();
-            float[] flatStates = new float[n * 8 * 9 * 9];
-            float[] flatLabels = new float[n];
-
-            for (int i = 0; i < n; i++) {
-                System.arraycopy(states.get(i), 0, flatStates, i * 8 * 9 * 9, 8 * 9 * 9);
-                flatLabels[i] = labels.get(i);
-            }
-
-            NDArray xData = trainManager.create(flatStates, new Shape(n, 8, 9, 9));
-            NDArray yData = trainManager.create(flatLabels, new Shape(n, 1));
 
             // Training config
             DefaultTrainingConfig config = new DefaultTrainingConfig(Loss.sigmoidBinaryCrossEntropyLoss())
