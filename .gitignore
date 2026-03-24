@@ -37,3 +37,21 @@ output_*.txt
 
 # Archived test files
 test-archive/
+
+# ML training data and models (large binary files)
+training_data/
+models/
+*.qdat
+*.pt
+*.onnx
+
+# Build output
+out/
+target/
+
+# IDE
+.idea/
+*.iml
+
+# Claude Code
+.claude/
