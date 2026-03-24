@@ -16,10 +16,11 @@ import java.util.List;
  */
 public class BoardView extends Pane {
 
-    private static final int CELL_SIZE = 55;
-    private static final int GAP_SIZE = 12;
     private static final int BOARD_SIZE = 9;
-    private static final int PAWN_RADIUS = 22;
+
+    private final int CELL_SIZE;
+    private final int GAP_SIZE;
+    private final int PAWN_RADIUS;
 
     // Colors
     private static final Color BOARD_BG = Color.web("#1a1a2e");
@@ -44,7 +45,16 @@ public class BoardView extends Pane {
     private Rectangle selectedWallRect;
     private Wall currentSelectedWall;
 
-    public BoardView() {
+    public BoardView(double targetSize) {
+        // Derive cell size from target total size
+        // totalSize = 9 * CELL_SIZE + 8 * GAP_SIZE + 40 (padding)
+        // GAP_SIZE ~= CELL_SIZE * 0.22, so totalSize ~= 9*C + 8*0.22*C + 40 = 10.76*C + 40
+        int cellSize = (int) ((targetSize - 40) / 10.76);
+        cellSize = Math.max(35, Math.min(60, cellSize)); // clamp to reasonable range
+        CELL_SIZE = cellSize;
+        GAP_SIZE = Math.max(6, (int) (cellSize * 0.22));
+        PAWN_RADIUS = (int) (cellSize * 0.4);
+
         int totalSize = BOARD_SIZE * CELL_SIZE + (BOARD_SIZE - 1) * GAP_SIZE + 40;
 
         setPrefSize(totalSize, totalSize);
