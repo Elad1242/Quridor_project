@@ -41,9 +41,19 @@ test-archive/
 # ML training data and models (large binary files)
 training_data/
 models/
+models_rl/
+policy_model/
+dagger_data/
 *.qdat
+*.qval
+*.qpol
 *.pt
 *.onnx
+training_features.dat
+dependency-reduced-pom.xml
+
+# Commit feature_model.bin (small, 35KB) — the actual trained model
+!feature_model.bin
 
 # Build output
 out/

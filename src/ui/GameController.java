@@ -62,17 +62,14 @@ public class GameController {
     private String player2Name = "Player 2";
 
     // --- Bot integration ---
-    // Player 2 can be controlled by the algorithmic bot or NNBot.
+    // Player 2 can be controlled by BotBrain (algorithmic) or MLBot (pure-Java NN).
     // When active, human input is blocked during the bot's turn and
     // the bot computes its action in a background thread.
     private boolean player2IsBot = false;
     private boolean player1IsBot = false; // Bot vs Bot mode
-    private boolean player1IsNNBot = false; // NNBot vs BotBrain mode
-    private boolean player2IsNNBot = false; // Human vs NNBot mode
     private BotBrain botBrain;    // Brain for player 2
     private BotBrain botBrain1;   // Brain for player 1 (Bot vs Bot mode)
-    private NNBot nnBot;          // Neural network bot
-    private MLBot mlBot;          // Pure ML CNN bot
+    private MLBot mlBot;          // Pure-Java NN bot
     private boolean player1IsMLBot = false; // MLBot vs BotBrain mode
     private boolean player2IsMLBot = false; // Human vs MLBot mode
     private boolean botThinking = false; // True while bot is computing
@@ -83,8 +80,8 @@ public class GameController {
     private Label speedLabel;
     private Button pauseButton;
 
-    // --- NNBot vs BotBrain tracking ---
-    private int nnBotWins = 0;
+    // --- MLBot vs BotBrain tracking ---
+    private int mlBotWins = 0;
     private int botBrainWins = 0;
     private Label scoreLabel;
 
@@ -111,15 +108,8 @@ public class GameController {
                 }
                 botBrain = new BotBrain(0.0, 3);
                 botBrain1 = null;
-            } else if (player1IsNNBot) {
-                // NNBot vs BotBrain mode
-                nnBot = new NNBot("quoridor_policy.eg");
-                nnBot.setTemperature(0.0);  // Greedy: always picks best move
-                botBrain = new BotBrain(0.0, 3); // BotBrain with random openings
-                botBrain1 = null;
             } else {
-                // Bot vs Bot: additive noise (±8 pts) + 3 random opening moves
-                // Creates diverse but high-quality games for ML training
+                // Bot vs Bot: 3 random opening moves for variety
                 botBrain  = new BotBrain(0.0, 3); // Bot B
                 botBrain1 = new BotBrain(0.0, 3); // Bot A
             }
@@ -132,11 +122,6 @@ public class GameController {
                     System.err.println("Failed to load MLBot: " + ex.getMessage());
                     mlBot = null;
                 }
-                botBrain = null;
-            } else if (player2IsNNBot) {
-                // Human vs NNBot mode
-                nnBot = new NNBot("quoridor_policy.eg");
-                nnBot.setTemperature(0.0);  // Greedy: always picks best move
                 botBrain = null;
             } else {
                 // Human vs BotBrain mode
@@ -179,10 +164,7 @@ public class GameController {
             // Bot vs Bot: hide timer and start bot 1's turn
             stopTimer();
             if (player1IsMLBot) {
-                timerLabel.setText("🤖 MLBot (CNN) vs BotBrain 🤖");
-                timerLabel.setTextFill(Color.web("#e74c3c"));
-            } else if (player1IsNNBot) {
-                timerLabel.setText("🧠 NNBot vs BotBrain 🤖");
+                timerLabel.setText("🤖 MLBot (NN) vs BotBrain 🤖");
                 timerLabel.setTextFill(Color.web("#e74c3c"));
             } else {
                 timerLabel.setText("🤖 Bot vs Bot");
@@ -266,47 +248,39 @@ public class GameController {
         player2Box.getChildren().addAll(player2Header, player2Field);
 
         // --- Bot toggle checkbox ---
-        CheckBox botCheckbox = new CheckBox("Player 2 is BotBrain (AI)");
+        CheckBox botCheckbox = new CheckBox("🤖 Play against BotBrain");
         botCheckbox.setFont(Font.font("Arial", FontWeight.BOLD, 14));
         botCheckbox.setTextFill(Color.web("#e67e22"));
-        botCheckbox.setSelected(player2IsBot && !player2IsNNBot);
+        botCheckbox.setSelected(player2IsBot && !player2IsMLBot && !player1IsBot);
         botCheckbox.setStyle("-fx-cursor: hand;");
 
-        // --- Human vs NNBot checkbox ---
-        CheckBox humanVsNNBotCheckbox = new CheckBox("🧠 Player 2 is NNBot (ML)");
-        humanVsNNBotCheckbox.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-        humanVsNNBotCheckbox.setTextFill(Color.web("#e74c3c"));
-        humanVsNNBotCheckbox.setSelected(player2IsNNBot);
-        humanVsNNBotCheckbox.setStyle("-fx-cursor: hand;");
-
         // --- Bot vs Bot checkbox ---
-        CheckBox botVsBotCheckbox = new CheckBox("🤖 Bot vs Bot (watch AI play)");
+        CheckBox botVsBotCheckbox = new CheckBox("🤖 Watch BotBrain vs BotBrain");
         botVsBotCheckbox.setFont(Font.font("Arial", FontWeight.BOLD, 14));
         botVsBotCheckbox.setTextFill(Color.web("#9b59b6"));
-        botVsBotCheckbox.setSelected(player1IsBot && player2IsBot && !player1IsNNBot);
+        botVsBotCheckbox.setSelected(player1IsBot && player2IsBot && !player1IsMLBot);
         botVsBotCheckbox.setStyle("-fx-cursor: hand;");
 
-        // --- NNBot vs BotBrain checkbox ---
-        CheckBox nnBotCheckbox = new CheckBox("🧠 NNBot vs BotBrain (watch ML play)");
-        nnBotCheckbox.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-        nnBotCheckbox.setTextFill(Color.web("#9b59b6"));
-        nnBotCheckbox.setSelected(player1IsNNBot);
-        nnBotCheckbox.setStyle("-fx-cursor: hand;");
-
         // --- MLBot vs BotBrain checkbox ---
-        CheckBox mlBotCheckbox = new CheckBox("🤖 MLBot vs BotBrain (pure CNN)");
+        CheckBox mlBotCheckbox = new CheckBox("🤖 Watch MLBot vs BotBrain");
         mlBotCheckbox.setFont(Font.font("Arial", FontWeight.BOLD, 14));
         mlBotCheckbox.setTextFill(Color.web("#e74c3c"));
         mlBotCheckbox.setSelected(player1IsMLBot);
         mlBotCheckbox.setStyle("-fx-cursor: hand;");
 
+        // --- Human vs MLBot checkbox (play against our pure-Java NN) ---
+        CheckBox humanVsMLBotCheckbox = new CheckBox("🎮 Play against MLBot");
+        humanVsMLBotCheckbox.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+        humanVsMLBotCheckbox.setTextFill(Color.web("#16a085"));
+        humanVsMLBotCheckbox.setSelected(player2IsMLBot);
+        humanVsMLBotCheckbox.setStyle("-fx-cursor: hand;");
+
         // When BotBrain is enabled, auto-fill player 2 name
         botCheckbox.setOnAction(e -> {
             if (botCheckbox.isSelected()) {
-                humanVsNNBotCheckbox.setSelected(false);
                 botVsBotCheckbox.setSelected(false);
-                nnBotCheckbox.setSelected(false);
                 mlBotCheckbox.setSelected(false);
+                humanVsMLBotCheckbox.setSelected(false);
                 player1Field.setText("Player 1");
                 player1Field.setDisable(false);
                 player2Field.setText("BotBrain");
@@ -317,29 +291,11 @@ public class GameController {
             }
         });
 
-        // Human vs NNBot mode
-        humanVsNNBotCheckbox.setOnAction(e -> {
-            if (humanVsNNBotCheckbox.isSelected()) {
-                botCheckbox.setSelected(false);
-                botVsBotCheckbox.setSelected(false);
-                nnBotCheckbox.setSelected(false);
-                mlBotCheckbox.setSelected(false);
-                player1Field.setText("Player 1");
-                player1Field.setDisable(false);
-                player2Field.setText("NNBot (ML)");
-                player2Field.setDisable(true);
-            } else {
-                player2Field.setText("Player 2");
-                player2Field.setDisable(false);
-            }
-        });
-
         botVsBotCheckbox.setOnAction(e -> {
             if (botVsBotCheckbox.isSelected()) {
                 botCheckbox.setSelected(false);
-                humanVsNNBotCheckbox.setSelected(false);
-                nnBotCheckbox.setSelected(false);
                 mlBotCheckbox.setSelected(false);
+                humanVsMLBotCheckbox.setSelected(false);
                 player1Field.setText("BotBrain A");
                 player1Field.setDisable(true);
                 player2Field.setText("BotBrain B");
@@ -352,13 +308,12 @@ public class GameController {
             }
         });
 
-        nnBotCheckbox.setOnAction(e -> {
-            if (nnBotCheckbox.isSelected()) {
+        mlBotCheckbox.setOnAction(e -> {
+            if (mlBotCheckbox.isSelected()) {
                 botCheckbox.setSelected(false);
-                humanVsNNBotCheckbox.setSelected(false);
                 botVsBotCheckbox.setSelected(false);
-                mlBotCheckbox.setSelected(false);
-                player1Field.setText("NNBot (ML)");
+                humanVsMLBotCheckbox.setSelected(false);
+                player1Field.setText("MLBot (NN)");
                 player1Field.setDisable(true);
                 player2Field.setText("BotBrain");
                 player2Field.setDisable(true);
@@ -370,19 +325,17 @@ public class GameController {
             }
         });
 
-        mlBotCheckbox.setOnAction(e -> {
-            if (mlBotCheckbox.isSelected()) {
+        // Human vs MLBot mode — play against the pure-Java NN
+        humanVsMLBotCheckbox.setOnAction(e -> {
+            if (humanVsMLBotCheckbox.isSelected()) {
                 botCheckbox.setSelected(false);
-                humanVsNNBotCheckbox.setSelected(false);
                 botVsBotCheckbox.setSelected(false);
-                nnBotCheckbox.setSelected(false);
-                player1Field.setText("MLBot (CNN)");
-                player1Field.setDisable(true);
-                player2Field.setText("BotBrain");
-                player2Field.setDisable(true);
-            } else {
+                mlBotCheckbox.setSelected(false);
                 player1Field.setText("Player 1");
                 player1Field.setDisable(false);
+                player2Field.setText("MLBot (Java NN)");
+                player2Field.setDisable(true);
+            } else {
                 player2Field.setText("Player 2");
                 player2Field.setDisable(false);
             }
@@ -391,25 +344,19 @@ public class GameController {
         // Apply initial state if bot was already selected (e.g. on restart)
         if (player1IsMLBot) {
             mlBotCheckbox.setSelected(true);
-            player1Field.setText("MLBot (CNN)");
+            player1Field.setText("MLBot (NN)");
             player1Field.setDisable(true);
             player2Field.setText("BotBrain");
             player2Field.setDisable(true);
-        } else if (player1IsNNBot) {
-            nnBotCheckbox.setSelected(true);
-            player1Field.setText("NNBot");
-            player1Field.setDisable(true);
-            player2Field.setText("BotBrain");
+        } else if (player2IsMLBot) {
+            humanVsMLBotCheckbox.setSelected(true);
+            player2Field.setText("MLBot (Java NN)");
             player2Field.setDisable(true);
         } else if (player1IsBot && player2IsBot) {
             botVsBotCheckbox.setSelected(true);
             player1Field.setText("Bot A");
             player1Field.setDisable(true);
             player2Field.setText("Bot B");
-            player2Field.setDisable(true);
-        } else if (player2IsNNBot) {
-            humanVsNNBotCheckbox.setSelected(true);
-            player2Field.setText("NNBot (ML)");
             player2Field.setDisable(true);
         } else if (player2IsBot) {
             botCheckbox.setSelected(true);
@@ -437,11 +384,10 @@ public class GameController {
             String name2 = player2Field.getText().trim();
             player1Name = name1.isEmpty() ? "Player 1" : name1;
             player2Name = name2.isEmpty() ? "Player 2" : name2;
-            player2IsBot = botCheckbox.isSelected() || botVsBotCheckbox.isSelected() || nnBotCheckbox.isSelected() || humanVsNNBotCheckbox.isSelected() || mlBotCheckbox.isSelected();
-            player1IsBot = botVsBotCheckbox.isSelected() || nnBotCheckbox.isSelected() || mlBotCheckbox.isSelected();
-            player1IsNNBot = nnBotCheckbox.isSelected();
-            player2IsNNBot = humanVsNNBotCheckbox.isSelected();
+            player2IsBot = botCheckbox.isSelected() || botVsBotCheckbox.isSelected() || mlBotCheckbox.isSelected() || humanVsMLBotCheckbox.isSelected();
+            player1IsBot = botVsBotCheckbox.isSelected() || mlBotCheckbox.isSelected();
             player1IsMLBot = mlBotCheckbox.isSelected();
+            player2IsMLBot = humanVsMLBotCheckbox.isSelected();
             dialog.close();
         });
 
@@ -449,9 +395,9 @@ public class GameController {
         player1Field.setOnAction(e -> player2Field.requestFocus());
 
         mainContainer.getChildren().addAll(titleLabel, subtitleLabel,
-                                           player1Box, player2Box, botCheckbox, humanVsNNBotCheckbox, botVsBotCheckbox, nnBotCheckbox, mlBotCheckbox, startButton);
+                                           player1Box, player2Box, botCheckbox, botVsBotCheckbox, mlBotCheckbox, humanVsMLBotCheckbox, startButton);
 
-        Scene dialogScene = new Scene(mainContainer, 380, 600);
+        Scene dialogScene = new Scene(mainContainer, 380, 650);
         dialog.setScene(dialogScene);
         dialog.centerOnScreen();
         dialog.showAndWait();
@@ -646,12 +592,12 @@ public class GameController {
 
             panel.getChildren().addAll(spacer, pauseButton, slowerButton, fasterButton, speedLabel);
 
-            // Add score tracker for NNBot vs BotBrain
-            if (player1IsNNBot) {
+            // Add score tracker for MLBot vs BotBrain
+            if (player1IsMLBot) {
                 Region spacer2 = new Region();
                 spacer2.setPrefWidth(30);
 
-                scoreLabel = new Label("Score: NNBot " + nnBotWins + " - " + botBrainWins + " BotBrain");
+                scoreLabel = new Label("Score: MLBot " + mlBotWins + " - " + botBrainWins + " BotBrain");
                 scoreLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
                 scoreLabel.setTextFill(Color.web("#f1c40f"));
                 scoreLabel.setStyle("-fx-background-color: #34495e; -fx-padding: 8 15; -fx-background-radius: 5;");
@@ -920,15 +866,15 @@ public class GameController {
     private void showWinner() {
         Player winner = gameState.getWinner();
 
-        // Track wins for NNBot vs BotBrain mode
-        if (player1IsNNBot) {
+        // Track wins for MLBot vs BotBrain mode
+        if (player1IsMLBot) {
             if (winner == gameState.getPlayer(0)) {
-                nnBotWins++;
+                mlBotWins++;
             } else {
                 botBrainWins++;
             }
             if (scoreLabel != null) {
-                scoreLabel.setText("Score: NNBot " + nnBotWins + " - " + botBrainWins + " BotBrain");
+                scoreLabel.setText("Score: MLBot " + mlBotWins + " - " + botBrainWins + " BotBrain");
             }
         }
 
@@ -1020,33 +966,42 @@ public class GameController {
 
             // Re-initialize or remove bots based on dialog choice
             if (player1IsBot && player2IsBot) {
-                if (player1IsNNBot) {
-                    nnBot = new NNBot("quoridor_policy.eg");
-                    nnBot.setTemperature(0.0);  // Greedy: always picks best move
-                    botBrain = new BotBrain(0.0, 3);  // Random openings
+                if (player1IsMLBot) {
+                    // MLBot vs BotBrain mode
+                    try {
+                        mlBot = new MLBot("models", "best-model");
+                    } catch (Exception ex) {
+                        System.err.println("Failed to load MLBot: " + ex.getMessage());
+                        mlBot = null;
+                    }
+                    botBrain = new BotBrain(0.0, 3);
                     botBrain1 = null;
                 } else {
                     // Bot vs Bot: random openings for diverse ML data
                     botBrain  = new BotBrain(0.0, 3);
                     botBrain1 = new BotBrain(0.0, 3);
-                    nnBot = null;
+                    mlBot = null;
                 }
             } else if (player2IsBot) {
-                if (player2IsNNBot) {
-                    // Human vs NNBot mode
-                    nnBot = new NNBot("quoridor_policy.eg");
-                    nnBot.setTemperature(0.0);  // Greedy: always picks best move
+                if (player2IsMLBot) {
+                    // Human vs MLBot mode
+                    try {
+                        mlBot = new MLBot("models", "best-model");
+                    } catch (Exception ex) {
+                        System.err.println("Failed to load MLBot: " + ex.getMessage());
+                        mlBot = null;
+                    }
                     botBrain = null;
                 } else {
                     // Human vs BotBrain mode
                     botBrain = new BotBrain();
-                    nnBot = null;
+                    mlBot = null;
                 }
                 botBrain1 = null;
             } else {
                 botBrain = null;
                 botBrain1 = null;
-                nnBot = null;
+                mlBot = null;
             }
             botThinking = false;
             botVsBotPaused = false;
@@ -1067,8 +1022,8 @@ public class GameController {
 
             if (player1IsBot && player2IsBot) {
                 stopTimer();
-                if (player1IsNNBot) {
-                    timerLabel.setText("🧠 NNBot vs BotBrain 🤖");
+                if (player1IsMLBot) {
+                    timerLabel.setText("🤖 MLBot (NN) vs BotBrain 🤖");
                     timerLabel.setTextFill(Color.web("#e74c3c"));
                 } else {
                     timerLabel.setText("🤖 Bot vs Bot");
@@ -1147,22 +1102,19 @@ public class GameController {
 
         int currentIdx = gameState.getCurrentPlayerIndex();
 
-        // Determine which brain to use
-        // MLBot, NNBot, or BotBrain depending on mode
+        // Determine which brain to use: MLBot or BotBrain depending on mode
         boolean useMLBot = (currentIdx == 0 && player1IsMLBot && mlBot != null)
                         || (currentIdx == 1 && player2IsMLBot && mlBot != null);
-        boolean useNNBot = !useMLBot && ((currentIdx == 0 && player1IsNNBot && nnBot != null)
-                        || (currentIdx == 1 && player2IsNNBot && nnBot != null));
         BotBrain activeBrain = null;
-        if (!useNNBot && !useMLBot) {
+        if (!useMLBot) {
             if (currentIdx == 0 && player1IsBot && botBrain1 != null) {
                 activeBrain = botBrain1;
-            } else if (currentIdx == 1 && player2IsBot && !player2IsNNBot && !player2IsMLBot && botBrain != null) {
+            } else if (currentIdx == 1 && player2IsBot && !player2IsMLBot && botBrain != null) {
                 activeBrain = botBrain;
             }
         }
 
-        if (activeBrain == null && !useNNBot && !useMLBot) return;
+        if (activeBrain == null && !useMLBot) return;
 
         botThinking = true;
         stopTimer(); // Don't tick timer while bot thinks
@@ -1180,7 +1132,6 @@ public class GameController {
         // Delay: shorter for bot vs bot, longer for human vs bot
         int delayMs = isBotVsBot ? botVsBotDelayMs : 800;
         final BotBrain brainToUse = activeBrain;
-        final boolean useNN = useNNBot;
         final boolean useML = useMLBot;
         final int expectedGeneration = gameGeneration; // Capture current generation
 
@@ -1201,12 +1152,6 @@ public class GameController {
                     Platform.runLater(() -> {
                         if (expectedGeneration != gameGeneration) return;
                         executeMLBotAction(mlAction);
-                    });
-                } else if (useNN) {
-                    NNBot.BotAction nnAction = nnBot.computeBestAction(gameState);
-                    Platform.runLater(() -> {
-                        if (expectedGeneration != gameGeneration) return;
-                        executeNNBotAction(nnAction);
                     });
                 } else {
                     BotBrain.BotAction action = brainToUse.computeBestAction(gameState);
@@ -1289,72 +1234,7 @@ public class GameController {
     }
 
     /**
-     * Executes the NNBot's chosen action on the game state.
-     * Similar to executeBotAction but handles NNBot.BotAction type.
-     */
-    private void executeNNBotAction(NNBot.BotAction action) {
-        try {
-            String botName = gameState.getCurrentPlayer().getName();
-
-            if (action == null) {
-                statusLabel.setText(botName + " couldn't decide — turn skipped");
-                gameState.nextTurn();
-                botThinking = false;
-                boardView.update();
-                updateUI();
-                startTimer();
-                triggerBotTurnIfNeeded();
-                return;
-            }
-
-            if (action.type == NNBot.BotAction.Type.MOVE) {
-                Player bot = gameState.getCurrentPlayer();
-                bot.setPosition(action.moveTarget);
-                statusLabel.setText(botName + " moved to " + action.moveTarget
-                        + " (score: " + String.format("%.3f", action.score) + ")");
-                statusLabel.setTextFill(Color.web("#e74c3c"));
-
-                gameState.checkWinCondition();
-                if (gameState.isGameOver()) {
-                    botThinking = false;
-                    stopTimer();
-                    boardView.update();
-                    updateUI();
-                    showWinner();
-                    return;
-                }
-
-            } else if (action.type == NNBot.BotAction.Type.WALL) {
-                Wall wall = action.wallToPlace;
-                if (WallValidator.isValidWallPlacement(gameState, wall)) {
-                    gameState.addWall(wall);
-                    String orientStr = wall.isHorizontal() ? "horizontal" : "vertical";
-                    statusLabel.setText(botName + " placed " + orientStr + " wall at ("
-                            + wall.getRow() + "," + wall.getCol() + ")"
-                            + " (score: " + String.format("%.3f", action.score) + ")");
-                    statusLabel.setTextFill(Color.web("#e74c3c"));
-                } else {
-                    statusLabel.setText(botName + " wall was invalid — turn skipped");
-                }
-            }
-
-            gameState.nextTurn();
-            botThinking = false;
-            wallMode = false;
-            updateModeButtons();
-            boardView.update();
-            updateUI();
-            startTimer();
-            triggerBotTurnIfNeeded();
-        } catch (Exception ex) {
-            System.err.println("[NNBOT ACTION ERROR] " + ex.getClass().getName() + ": " + ex.getMessage());
-            ex.printStackTrace();
-            botThinking = false;
-        }
-    }
-
-    /**
-     * Executes the MLBot's chosen action (pure CNN) on the game state.
+     * Executes the MLBot's chosen action (pure-Java NN) on the game state.
      */
     private void executeMLBotAction(MLBot.Action action) {
         try {

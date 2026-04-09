@@ -588,4 +588,41 @@ public class BotBrain {
         // Score = race advantage after wall + opponent's best response
         return (bestOppDistAfterMove - botDistAfter) * 3.0;
     }
+
+    /**
+     * Evaluates a position and returns a normalized score in [0, 1].
+     * Uses BotBrain's internal logic: best action score + race advantage.
+     * This is used as training labels for the ML bot.
+     */
+    public double evaluatePosition(GameState state) {
+        Player bot = state.getCurrentPlayer();
+        Player opponent = state.getOtherPlayer();
+
+        int botDist = logic.PathFinder.aStarShortestPath(state, bot);
+        int oppDist = logic.PathFinder.aStarShortestPath(state, opponent);
+        if (botDist < 0) botDist = 20;
+        if (oppDist < 0) oppDist = 20;
+
+        // Instant win
+        if (botDist <= 1) return 0.99;
+        // Opponent about to win
+        if (oppDist <= 1) return 0.05;
+
+        int raceGap = oppDist - botDist; // positive = we're ahead
+
+        // Get best move score
+        double moveScore = 0;
+        try {
+            BoardGraph graph = new BoardGraph();
+            graph.buildFromState(state, opponent.getPosition());
+            MoveEvaluator.ScoredMove bestMove = MoveEvaluator.findBestMove(state, graph);
+            if (bestMove != null) moveScore = bestMove.score;
+        } catch (Exception e) { moveScore = 30; }
+
+        // Composite: action quality + race advantage
+        double rawScore = moveScore + raceGap * 10.0;
+
+        // Sigmoid normalize to [0, 1]
+        return 1.0 / (1.0 + Math.exp(-rawScore / 30.0));
+    }
 }
