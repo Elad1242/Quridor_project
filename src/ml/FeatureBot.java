@@ -32,8 +32,10 @@ public class FeatureBot {
 
     /** Top-k sampling: pick randomly from actions within this score of the best.
      *  Small enough to stay close to argmax (preserves playing strength),
-     *  large enough to break ties between near-identical options so games vary. */
-    private static final double TOPK_THRESHOLD = 0.01;
+     *  large enough to break ties between near-identical options so games vary.
+     *  Can be overridden with -Dfeaturebot.topk=0 to force pure argmax for tests. */
+    private static final double TOPK_THRESHOLD =
+            Double.parseDouble(System.getProperty("featurebot.topk", "0.01"));
 
     private final NeuralNetwork nn;
     private final Random rng = new Random();

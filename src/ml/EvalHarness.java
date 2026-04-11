@@ -159,6 +159,31 @@ public class EvalHarness {
                         }
                     };
                 }
+                case "botbrain6": {
+                    // BotBrain with 6 random opening moves — same as the GUI uses.
+                    // A fresh instance is created per game in EvalHarness.run (one
+                    // Participant is reused across games, so this matters: the
+                    // turnCount inside BotBrain persists across games, which means
+                    // after the first game the random-opening phase has already
+                    // ended. We therefore create a FRESH BotBrain per turn call
+                    // with 6 random openings — the state resets between games
+                    // because Participant.reset() is called by the engine).
+                    return new Participant() {
+                        BotBrain brain = freshBrain();
+                        private BotBrain freshBrain() {
+                            BotBrain b = new BotBrain(0.0, 6);
+                            b.setSilent(true);
+                            return b;
+                        }
+                        @Override void reset() { brain = freshBrain(); }
+                        @Override boolean playOneTurn(GameState state) {
+                            BotBrain.BotAction a = brain.computeBestAction(state);
+                            if (a == null) return false;
+                            applyBrainAction(state, a);
+                            return true;
+                        }
+                    };
+                }
                 case "greedy": {
                     return new Participant() {
                         @Override boolean playOneTurn(GameState state) {
