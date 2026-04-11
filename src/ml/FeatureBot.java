@@ -8,7 +8,9 @@ import model.Player;
 import model.Position;
 import model.Wall;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 /**
  * Pure ML Bot using 27-feature evaluation (22 global + 5 per-action).
@@ -28,7 +30,13 @@ import java.util.List;
  */
 public class FeatureBot {
 
+    /** Top-k sampling: pick randomly from actions within this score of the best.
+     *  Small enough to stay close to argmax (preserves playing strength),
+     *  large enough to break ties between near-identical options so games vary. */
+    private static final double TOPK_THRESHOLD = 0.01;
+
     private final NeuralNetwork nn;
+    private final Random rng = new Random();
 
     public FeatureBot(NeuralNetwork nn) {
         this.nn = nn;
@@ -39,6 +47,10 @@ public class FeatureBot {
     }
 
     public Action computeBestAction(GameState state) {
+        // Collect every candidate action with its NN score, then sample from
+        // the near-best set instead of argmax. This produces visibly different
+        // games without meaningfully weakening the bot, since we only sample
+        // among actions whose score is within TOPK_THRESHOLD of the top.
         Player me = state.getCurrentPlayer();
         Player opp = state.getOtherPlayer();
         List<Position> validMoves = MoveValidator.getValidMoves(state, me);
@@ -58,18 +70,16 @@ public class FeatureBot {
             if (bestWall != null) return bestWall;
         }
 
-        // === EVALUATE ALL LEGAL ACTIONS WITH NN ===
-        Action bestAction = null;
+        // === COLLECT ALL CANDIDATE ACTIONS WITH THEIR NN SCORES ===
+        List<Action> candidates = new ArrayList<>();
         double bestScore = Double.NEGATIVE_INFINITY;
 
         // Evaluate all moves
         for (Position move : validMoves) {
             double[] features = GameFeatures.extractForMove(state, move);
             double score = nn.predict(features);
-            if (score > bestScore) {
-                bestScore = score;
-                bestAction = new Action(Action.Type.MOVE, move, null, score);
-            }
+            candidates.add(new Action(Action.Type.MOVE, move, null, score));
+            if (score > bestScore) bestScore = score;
         }
 
         // Evaluate walls (only if we have walls remaining)
@@ -93,20 +103,28 @@ public class FeatureBot {
 
                         double[] features = GameFeatures.extractForWall(state, wall);
                         double score = nn.predict(features);
-                        if (score > bestScore) {
-                            bestScore = score;
-                            bestAction = new Action(Action.Type.WALL, null, wall, score);
-                        }
+                        candidates.add(new Action(Action.Type.WALL, null, wall, score));
+                        if (score > bestScore) bestScore = score;
                     }
                 }
             }
         }
 
-        if (bestAction == null) {
-            bestAction = new Action(Action.Type.MOVE, validMoves.get(0), null, 0);
+        if (candidates.isEmpty()) {
+            return new Action(Action.Type.MOVE, validMoves.get(0), null, 0);
         }
 
-        return bestAction;
+        // Keep only the near-best candidates (within TOPK_THRESHOLD of the top).
+        List<Action> topK = new ArrayList<>();
+        for (Action a : candidates) {
+            if (a.score >= bestScore - TOPK_THRESHOLD) topK.add(a);
+        }
+
+        // Sample uniformly from the top-k set. If only one candidate is near
+        // the top, this is identical to argmax; if several are tied or close,
+        // the bot picks among them randomly, which produces varied but still
+        // strong play across games.
+        return topK.get(rng.nextInt(topK.size()));
     }
 
     /**

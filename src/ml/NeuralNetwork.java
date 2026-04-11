@@ -203,7 +203,6 @@ public class NeuralNetwork {
                 }
             }
         }
-        System.out.println("Model saved to " + filePath);
     }
 
     public static NeuralNetwork load(String filePath) throws IOException {
@@ -221,7 +220,6 @@ public class NeuralNetwork {
                     nn.biases[L][j] = in.readDouble();
                 }
             }
-            System.out.println("Model loaded from " + filePath);
             return nn;
         }
     }

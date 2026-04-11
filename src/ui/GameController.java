@@ -99,19 +99,22 @@ public class GameController {
         // Initialize bots if AI-controlled
         if (player1IsBot && player2IsBot) {
             if (player1IsMLBot) {
-                // MLBot vs BotBrain mode
+                // MLBot vs BotBrain mode — 6 random opens for variety across games
                 try {
                     mlBot = new MLBot("models", "best-model");
                 } catch (Exception ex) {
                     System.err.println("Failed to load MLBot: " + ex.getMessage());
                     mlBot = null;
                 }
-                botBrain = new BotBrain(0.0, 3);
+                botBrain = new BotBrain(0.0, 6);
+                botBrain.setSilent(true);
                 botBrain1 = null;
             } else {
-                // Bot vs Bot: 3 random opening moves for variety
-                botBrain  = new BotBrain(0.0, 3); // Bot B
-                botBrain1 = new BotBrain(0.0, 3); // Bot A
+                // Bot vs Bot: 6 random opening moves for variety
+                botBrain  = new BotBrain(0.0, 6); // Bot B
+                botBrain1 = new BotBrain(0.0, 6); // Bot A
+                botBrain.setSilent(true);
+                botBrain1.setSilent(true);
             }
         } else if (player2IsBot) {
             if (player2IsMLBot) {
@@ -126,6 +129,7 @@ public class GameController {
             } else {
                 // Human vs BotBrain mode
                 botBrain = new BotBrain(); // Deterministic for Human vs Bot
+                botBrain.setSilent(true);
             }
         }
 
@@ -974,12 +978,15 @@ public class GameController {
                         System.err.println("Failed to load MLBot: " + ex.getMessage());
                         mlBot = null;
                     }
-                    botBrain = new BotBrain(0.0, 3);
+                    botBrain = new BotBrain(0.0, 6);
+                    botBrain.setSilent(true);
                     botBrain1 = null;
                 } else {
-                    // Bot vs Bot: random openings for diverse ML data
-                    botBrain  = new BotBrain(0.0, 3);
-                    botBrain1 = new BotBrain(0.0, 3);
+                    // Bot vs Bot: random openings for varied games
+                    botBrain  = new BotBrain(0.0, 6);
+                    botBrain1 = new BotBrain(0.0, 6);
+                    botBrain.setSilent(true);
+                    botBrain1.setSilent(true);
                     mlBot = null;
                 }
             } else if (player2IsBot) {
@@ -995,6 +1002,7 @@ public class GameController {
                 } else {
                     // Human vs BotBrain mode
                     botBrain = new BotBrain();
+                    botBrain.setSilent(true);
                     mlBot = null;
                 }
                 botBrain1 = null;
