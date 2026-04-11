@@ -130,9 +130,11 @@ public class BotBrain {
                 + " fwd=" + hasForwardMove + " turn=" + turnCount);
 
         // === RULE 0: Random opening (for diverse Bot vs Bot games) ===
-        // Turn 1: ALWAYS move forward (maintain strong opening position)
-        // Turns 2-N: pick uniformly from forward + sideways moves
-        // This creates column diversity while preserving opening quality.
+        // Turn 1: ALWAYS move forward (maintain strong opening position).
+        // Turns 2-N: pick uniformly from forward + sideways moves, which is
+        // what actually creates column diversity. Sideways moves in the
+        // opening are harmless tempo-wise and produce genuinely different
+        // game trajectories because the next turn A* path will be offset.
         if (turnCount <= openingRandomMoves) {
             List<Position> validMoves = MoveValidator.getValidMoves(state, bot);
             if (!validMoves.isEmpty()) {
@@ -140,7 +142,7 @@ public class BotBrain {
                 int goalRow = bot.getGoalRow();
                 int direction = (goalRow > botRow) ? 1 : -1;
 
-                // Separate forward and sideways moves
+                // Separate forward and sideways moves (backward moves excluded).
                 List<Position> forwardMoves = new java.util.ArrayList<>();
                 List<Position> sidewaysMoves = new java.util.ArrayList<>();
                 for (Position m : validMoves) {
@@ -149,12 +151,22 @@ public class BotBrain {
                     else if (rowDelta == 0) sidewaysMoves.add(m);
                 }
 
-                // Random opening: always pick from forward moves only (toward goal)
-                Position randomMove;
-                if (!forwardMoves.isEmpty()) {
-                    randomMove = forwardMoves.get(rng.nextInt(forwardMoves.size()));
+                Position randomMove = null;
+                if (turnCount == 1) {
+                    // Turn 1: always move forward (there is exactly one choice
+                    // on a fresh board anyway, so this just skips sideways).
+                    if (!forwardMoves.isEmpty()) {
+                        randomMove = forwardMoves.get(rng.nextInt(forwardMoves.size()));
+                    }
                 } else {
-                    // Fallback to any valid move if no forward moves available
+                    // Turn 2..N: pick uniformly from forward + sideways combined.
+                    java.util.List<Position> pool = new java.util.ArrayList<>(forwardMoves);
+                    pool.addAll(sidewaysMoves);
+                    if (!pool.isEmpty()) {
+                        randomMove = pool.get(rng.nextInt(pool.size()));
+                    }
+                }
+                if (randomMove == null) {
                     randomMove = validMoves.get(rng.nextInt(validMoves.size()));
                 }
 
