@@ -62,6 +62,7 @@ target/
 # IDE
 .idea/
 *.iml
-
-# Claude Code
+.vscode/
+.fleet/
+.cache/
 .claude/
