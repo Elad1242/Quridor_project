@@ -12,70 +12,42 @@ import java.util.List;
 import java.util.Random;
 
 /**
- * The Bot's central decision engine — v11 (Improved).
- *
- * KEY IMPROVEMENTS (v11):
- *   1. JUMP AWARENESS: Detects and creates jump opportunities, avoids giving jumps
- *   2. RACE-AWARE LOGIC: More aggressive when losing, conservative when winning
- *   3. BETTER ENDGAME: Smarter blocking when opponent is close to goal
- *   4. DEEPER LOOKAHEAD: 2-ply lookahead for critical decisions
- *   5. BARRIER CREATION: Better wall synergy and funnel creation
- *   6. KILL ZONES: Bonus for walls near opponent's goal row
- *
- * PREVIOUS v10b STRATEGY (retained):
- *   - Only give NO-FORWARD BONUS to walls with pathDmg >= 2 (meaningful walls)
- *   - PROACTIVE walling: when bot has a forward move but wall has netTempo >= 1,
- *     consider the wall even early in the game
- *
- * EXPLORATION (for Bot vs Bot / ML training):
- *   - openingRandomMoves: first N moves are uniformly random (forward+sideways)
- *   - 0 openingRandomMoves = fully deterministic (default, for human vs bot)
+ * Main decision-making class for the bot. Picks between moving and placing walls
+ * based on race state, path distances, and a bunch of heuristics.
  */
 public class BotBrain {
 
     private static final int MAX_CONSECUTIVE_WALLS = 3;
     private static final int MAX_CUMULATIVE_SELF_HARM = 5;
 
-    // --- Tracking ---
     private int consecutiveWalls = 0;
     private int cumulativeSelfHarm = 0;
 
-    // --- Exploration / Randomness (for Bot vs Bot and ML training) ---
-    private final double explorationNoise;   // 0.0 = deterministic, 8.0 = moderate additive noise
-    private final int openingRandomMoves;     // Number of random opening moves (from ALL valid moves)
+    private final double explorationNoise;
+    private final int openingRandomMoves;
     private final Random rng;
     private int turnCount = 0;
     private boolean silent = false;
 
-    /** Default constructor: deterministic bot (for human vs bot). */
+    /** Default constructor - no randomness. */
     public BotBrain() {
         this(0.0, 0);
     }
 
-    /** Enable silent mode (no debug prints). Used during batch simulation. */
+    /** Turn off debug prints for batch runs. */
     public void setSilent(boolean silent) {
         this.silent = silent;
     }
 
     /**
-     * Constructor with exploration parameters (for Bot vs Bot / ML training).
-     *
-     * Exploration creates diverse but HIGH-QUALITY games for ML training:
-     *   - Opening moves are uniformly random from forward+sideways options
-     *   - Near-best selection: picks randomly among moves within 8pts of best
-     *   - Wall-vs-move coin flip when values are close (within 10 pts)
-     *   - Endgame tightens threshold to 2pts for precision
-     *   - Emergency rules (instant win, must-block) are NEVER affected
-     *
-     * @param explorationNoise (legacy, currently unused — set to 0.0)
-     * @param openingRandomMoves number of initial random moves (3-4 recommended)
+     * Constructor with exploration params for bot vs bot games.
+     * @param explorationNoise unused legacy param, just pass 0.0
+     * @param openingRandomMoves how many random moves at the start (3-4 is good)
      */
     public BotBrain(double explorationNoise, int openingRandomMoves) {
         this.explorationNoise = explorationNoise;
         this.openingRandomMoves = openingRandomMoves;
-        // Use unique seed per instance to prevent two bots created in quick
-        // succession from getting the same Random seed (System.nanoTime collision)
-        this.rng = new Random(System.nanoTime() ^ Thread.currentThread().getId() ^ (long)(Math.random() * Long.MAX_VALUE));
+        this.rng = new Random();
     }
 
     public static class BotAction {
@@ -124,17 +96,9 @@ public class BotBrain {
 
         turnCount++;
 
-        if (!silent) System.out.println("[BOT v11] botDist=" + botDist + " oppDist=" + oppDist
-                + " wallsLeft=" + wallsLeft + " consecutive=" + consecutiveWalls
-                + " selfHarmTotal=" + cumulativeSelfHarm
-                + " fwd=" + hasForwardMove + " turn=" + turnCount);
+        if (!silent) System.out.println("dist=" + botDist + "/" + oppDist + " walls=" + wallsLeft);
 
-        // === RULE 0: Random opening (for diverse Bot vs Bot games) ===
-        // Turn 1: ALWAYS move forward (maintain strong opening position).
-        // Turns 2-N: pick uniformly from forward + sideways moves, which is
-        // what actually creates column diversity. Sideways moves in the
-        // opening are harmless tempo-wise and produce genuinely different
-        // game trajectories because the next turn A* path will be offset.
+        // random opening moves for variety
         if (turnCount <= openingRandomMoves) {
             List<Position> validMoves = MoveValidator.getValidMoves(state, bot);
             if (!validMoves.isEmpty()) {
@@ -142,7 +106,7 @@ public class BotBrain {
                 int goalRow = bot.getGoalRow();
                 int direction = (goalRow > botRow) ? 1 : -1;
 
-                // Separate forward and sideways moves (backward moves excluded).
+                // split into forward and sideways (no backward)
                 List<Position> forwardMoves = new java.util.ArrayList<>();
                 List<Position> sidewaysMoves = new java.util.ArrayList<>();
                 for (Position m : validMoves) {
@@ -153,13 +117,12 @@ public class BotBrain {
 
                 Position randomMove = null;
                 if (turnCount == 1) {
-                    // Turn 1: always move forward (there is exactly one choice
-                    // on a fresh board anyway, so this just skips sideways).
+                    // first move: just go forward
                     if (!forwardMoves.isEmpty()) {
                         randomMove = forwardMoves.get(rng.nextInt(forwardMoves.size()));
                     }
                 } else {
-                    // Turn 2..N: pick uniformly from forward + sideways combined.
+                    // later turns: pick from forward + sideways
                     java.util.List<Position> pool = new java.util.ArrayList<>(forwardMoves);
                     pool.addAll(sidewaysMoves);
                     if (!pool.isEmpty()) {
@@ -170,27 +133,26 @@ public class BotBrain {
                     randomMove = validMoves.get(rng.nextInt(validMoves.size()));
                 }
 
-                if (!silent) System.out.println("[BOT v11] >> RANDOM OPENING: " + randomMove + " (turn " + turnCount + "/" + openingRandomMoves + ")");
+                if (!silent) System.out.println("random opening move: " + randomMove);
                 return doMove(BotAction.move(randomMove, 50.0));
             }
         }
 
-        // === RULE 1: Instant win ===
+        // instant win check
         if (botDist == 1) {
-            if (!silent) System.out.println("[BOT v11] >> INSTANT WIN!");
+            if (!silent) System.out.println("instant win!");
             return doMove(forceMove(state));
         }
 
-        // === RACE CALCULATION ===
-        int raceGap = oppDist - botDist;  // Positive = we're ahead, Negative = we're behind
+        // race calculation
+        int raceGap = oppDist - botDist;  // positive = we're ahead
         boolean weAreWinning = raceGap > 0;
         boolean weAreLosing = raceGap < 0;
         boolean closeRace = Math.abs(raceGap) <= 2;
 
-        // === RULE 1.5: RUSH MODE when far ahead ===
-        // If we're 4+ ahead with clear path, just run for the goal
+        // rush mode - if we're way ahead, just run for it
         if (weAreWinning && raceGap >= 4 && botDist <= 4 && hasForwardMove) {
-            if (!silent) System.out.println("[BOT v11] >> RUSH MODE (ahead by " + raceGap + ", only " + botDist + " from goal)");
+            if (!silent) System.out.println("rushing, ahead by " + raceGap);
             BoardGraph rushGraph = new BoardGraph();
             rushGraph.buildFromState(state, opponent.getPosition());
             MoveEvaluator.ScoredMove rushMove = MoveEvaluator.findBestMove(state, rushGraph, this);
@@ -199,7 +161,7 @@ public class BotBrain {
             }
         }
 
-        // === RULE 2: Emergency blocking (opponent about to win) ===
+        // emergency blocking if opponent is about to win
         if (oppDist <= 2 && wallsLeft > 0) {
             WallEvaluator.ScoredWall emergencyWall = WallEvaluator.findBestWall(state);
             if (emergencyWall != null && emergencyWall.score > 0) {
@@ -214,17 +176,14 @@ public class BotBrain {
                     int emSelfHarm = (botAfter >= 0) ? botAfter - botDist : 999;
                     // Only block if the wall actually helps and doesn't hurt us badly
                     if (emDamage > 0 && emSelfHarm <= 2) {
-                        if (!silent) System.out.println("[BOT v11] >> EMERGENCY BLOCK: " + emergencyWall.wall
-                                + " (score=" + String.format("%.1f", emergencyWall.score)
-                                + " oppDist=" + oppDist + " dmg=" + emDamage + ")");
+                        if (!silent) System.out.println("emergency block, dmg=" + emDamage);
                         return doWall(BotAction.wall(emergencyWall.wall, emergencyWall.score));
                     }
                 }
             }
         }
 
-        // === RULE 2.5: AGGRESSIVE MODE when losing badly ===
-        // If we're 3+ moves behind, prioritize walls heavily
+        // aggressive walling when losing badly
         if (weAreLosing && raceGap <= -3 && wallsLeft > 0 && oppDist > 2) {
             WallEvaluator.ScoredWall aggressiveWall = WallEvaluator.findBestWall(state);
             if (aggressiveWall != null && aggressiveWall.score > 10) {
@@ -233,17 +192,15 @@ public class BotBrain {
                 int botAfter = PathFinder.aStarWithWall(state, bot, aggressiveWall.wall);
                 int selfHarm = (botAfter >= 0) ? botAfter - botDist : 999;
 
-                // Be aggressive: accept walls with pathDmg >= 2, even with some self-harm
+                // accept walls with decent damage even with some self-harm
                 if (pathDmg >= 2 && selfHarm <= pathDmg) {
-                    if (!silent) System.out.println("[BOT v11] >> AGGRESSIVE WALL (losing by " + (-raceGap) + "): "
-                            + aggressiveWall.wall + " pathDmg=" + pathDmg + " selfHarm=" + selfHarm);
+                    if (!silent) System.out.println("aggressive wall, losing by " + (-raceGap));
                     return doWall(BotAction.wall(aggressiveWall.wall, aggressiveWall.score + 30));
                 }
             }
         }
 
-        // === RULE 2.6: ENDGAME BLOCKING ===
-        // When opponent is close (3-4 moves away), look for high-value blocking walls
+        // endgame blocking when opponent is close
         if (oppDist <= 4 && oppDist > 2 && wallsLeft > 0) {
             WallEvaluator.ScoredWall blockWall = WallEvaluator.findBestWall(state);
             if (blockWall != null) {
@@ -252,22 +209,21 @@ public class BotBrain {
                 int botAfter = PathFinder.aStarWithWall(state, bot, blockWall.wall);
                 int selfHarm = (botAfter >= 0) ? botAfter - botDist : 999;
 
-                // In endgame, a wall that gives us 2+ tempo is often worth it
+                // in endgame, a wall that gives us 2+ tempo is usually worth it
                 int netTempo = pathDmg - selfHarm;
                 boolean goodEndgameWall = pathDmg >= 3 && netTempo >= 2 && selfHarm <= 1;
 
-                // Also check if we can't catch up anyway - then wall is mandatory
+                // if we can't catch up, wall is mandatory
                 boolean mustWall = weAreLosing && oppDist < botDist && pathDmg >= 2;
 
                 if (goodEndgameWall || mustWall) {
-                    if (!silent) System.out.println("[BOT v11] >> ENDGAME BLOCK: " + blockWall.wall
-                            + " pathDmg=" + pathDmg + " selfHarm=" + selfHarm + " netTempo=" + netTempo);
+                    if (!silent) System.out.println("endgame block, dmg=" + pathDmg + " net=" + netTempo);
                     return doWall(BotAction.wall(blockWall.wall, blockWall.score + 20));
                 }
             }
         }
 
-        // === EVALUATE BEST MOVE ===
+        // find best move
         BoardGraph graph = new BoardGraph();
         graph.buildFromState(state, opponent.getPosition());
         MoveEvaluator.ScoredMove bestMove = MoveEvaluator.findBestMove(state, graph, this);
@@ -277,7 +233,7 @@ public class BotBrain {
             moveValue = bestMove.score;
         }
 
-        // === CLASSIFY MOVE TYPE ===
+        // check if best move goes forward
         boolean bestMoveIsForward = false;
         if (bestMove != null) {
             int botRow = bot.getPosition().getRow();
@@ -287,7 +243,7 @@ public class BotBrain {
             bestMoveIsForward = (moveRow - botRow) * direction > 0;
         }
 
-        // === EVALUATE BEST WALL ===
+        // find best wall
         WallEvaluator.ScoredWall bestWall = null;
         double wallValue = -999;
 
@@ -307,7 +263,7 @@ public class BotBrain {
 
                 boolean isEmergency = oppDist <= 2;
 
-                // === SELF-HARM REJECTION ===
+                // reject walls that hurt us too much
                 boolean rejectWall = false;
                 if (!isEmergency) {
                     if (selfHarmActual >= 3) {
@@ -319,135 +275,94 @@ public class BotBrain {
                     }
                 }
 
-                // === WALL CONSERVATION ===
-                // When walls are scarce (≤3), only place walls with significant damage
+                // conserve walls when running low
                 if (!isEmergency && wallsLeft <= 3 && pathDamage < 2) {
                     rejectWall = true;
-                    if (!silent) System.out.println("[BOT v11] CONSERVE WALLS: only " + wallsLeft + " left, pathDmg=" + pathDamage);
+                    if (!silent) System.out.println("conserving walls, only " + wallsLeft + " left");
                 }
 
                 if (rejectWall) {
-                    if (!silent) System.out.println("[BOT v11] HARM REJECT wall " + bestWall.wall
-                            + " selfHarm=" + selfHarmActual + " pathDmg=" + pathDamage
-                            + " botPathAfter=" + botPathAfterWall);
+                    if (!silent) System.out.println("rejected wall, selfHarm=" + selfHarmActual);
                     bestWall = null;
                 } else if (isEmergency && (selfHarmActual >= 4 || botPathAfterWall >= 16)) {
-                    if (!silent) System.out.println("[BOT v11] EMERGENCY REJECT wall " + bestWall.wall
-                            + " selfHarm=" + selfHarmActual);
+                    if (!silent) System.out.println("emergency reject, too much self harm");
                     bestWall = null;
                 } else if (bestWall != null) {
-                    // === v10b WALL SCORING ===
-                    // Net tempo: how many turns does this wall gain in the race?
+                    // wall scoring - net tempo is how many turns the wall gains
                     double netTempo = pathDamage - selfHarmActual - 1.0;
 
-                    // Base wall value from net tempo
+                    // base value from net tempo
                     wallValue = netTempo * 15.0;
 
-                    // Add raw evaluator score (synergy, position bonuses)
+                    // add evaluator score for synergy/position
                     wallValue += bestWall.score * 0.5;
 
-                    // === CONTEXT BONUSES (v10b: GATED by pathDamage) ===
-
-                    // BONUS 1: No forward move — but ONLY for strong walls (pathDmg >= 2)
-                    // pathDmg=1 walls waste wall tokens when trapped; better to move
+                    // extra points if we can't go forward
                     if (!hasForwardMove && pathDamage >= 2) {
                         wallValue += 25.0;
-                        if (!silent) System.out.println("[BOT v11] NO-FORWARD BONUS +25 (pathDmg=" + pathDamage + ")");
                     }
 
-                    // BONUS 2: Best move is sideways AND wall has good damage
+                    // bonus if our best move is sideways anyway
                     if (!bestMoveIsForward && pathDamage >= 2) {
                         wallValue += 10.0;
-                        if (!silent) System.out.println("[BOT v11] SIDEWAYS-MOVE BONUS +10");
                     }
 
-                    // BONUS 3: Bot is losing the race — but only for strong walls
-                    // (raceGap is negative when we're behind, so check weAreLosing)
+                    // bonus when we're losing the race
                     if (weAreLosing && -raceGap > 2 && pathDamage >= 2) {
                         double racingBonus = Math.min(-raceGap * 2.0, 20.0);
                         wallValue += racingBonus;
-                        if (!silent) System.out.println("[BOT v11] LOSING-RACE BONUS +" + String.format("%.0f", racingBonus));
                     }
 
-                    // BONUS 4: Emergency proximity
+                    // emergency proximity bonus
                     if (oppDist <= 3) {
                         wallValue += (4 - oppDist) * 10.0;
                     }
 
-                    // BONUS 5: PROACTIVE WALLING — even with forward move, good walls are worth placing
-                    // When the bot has a forward move but the wall has netTempo >= 1,
-                    // the wall is objectively better than just moving forward
+                    // proactive walling - good walls are worth placing even with forward moves
                     if (bestMoveIsForward && netTempo >= 1.0) {
-                        wallValue += 10.0; // Make it competitive with forward moves (~65)
-                        if (!silent) System.out.println("[BOT v11] PROACTIVE-WALL BONUS +10 (netTempo=" + String.format("%.1f", netTempo) + ")");
+                        wallValue += 10.0;
                     }
 
-                    // === RACE-AWARE ADJUSTMENTS ===
-
-                    // PENALTY: Don't over-wall when winning comfortably
-                    // If we're 3+ ahead and opponent is far, just move
+                    // don't over-wall when winning comfortably
                     if (weAreWinning && raceGap >= 3 && oppDist >= 6) {
                         wallValue -= 20.0;
-                        if (!silent) System.out.println("[BOT v11] WINNING CONSERVATION: wall penalty -20");
                     }
 
-                    // BONUS: Be aggressive with walls when losing
+                    // be aggressive with walls when losing
                     if (weAreLosing && pathDamage >= 2) {
                         double losingBonus = Math.min(-raceGap * 5.0, 25.0);
                         wallValue += losingBonus;
-                        if (!silent) System.out.println("[BOT v11] LOSING AGGRESSION: wall bonus +" + String.format("%.0f", losingBonus));
                     }
 
-                    // CLOSE RACE: Walls that gain tempo are critical
+                    // close race - tempo walls are critical
                     if (closeRace && netTempo >= 1.0) {
                         wallValue += 15.0;
-                        if (!silent) System.out.println("[BOT v11] CLOSE RACE TEMPO: wall bonus +15");
                     }
 
-                    if (!silent) System.out.println("[BOT v11] wallRaw=" + String.format("%.1f", bestWall.score)
-                            + " pathDmg=" + pathDamage + " selfHarm=" + selfHarmActual
-                            + " netTempo=" + String.format("%.1f", netTempo)
-                            + " wallValue=" + String.format("%.1f", wallValue)
-                            + " moveValue=" + String.format("%.1f", moveValue)
-                            + " moveIsFwd=" + bestMoveIsForward);
+                    if (!silent) System.out.println("wall eval: dmg=" + pathDamage + " harm=" + selfHarmActual
+                            + " wallVal=" + (int) wallValue + " moveVal=" + (int) moveValue);
                 }
             }
         } else if (!canWall && wallsLeft > 0) {
-            if (!silent) System.out.println("[BOT v11] WALL SUPPRESSED: consecutive=" + consecutiveWalls
-                    + " selfHarmTotal=" + cumulativeSelfHarm);
+            if (!silent) System.out.println("wall suppressed, too many consecutive");
         }
 
-        // === DIVERSITY NOTE ===
-        // Game diversity for ML training comes from random opening moves (Rule 0).
-        // Each BotBrain instance has a unique Random seed, so two bots created
-        // simultaneously will make different random opening choices.
-        // After the opening, play is fully deterministic for maximum quality.
-
-        // === DYNAMIC DECISION ===
+        // decide between wall and move
         if (bestMove == null && bestWall == null) return null;
 
-        // Determine if wall or move wins
         boolean preferWall = (bestWall != null && wallValue > moveValue && bestWall.score > 0);
-
-        // Note: wall-vs-move decision is kept deterministic for maximum quality.
-        // Diversity comes only from random opening moves (Rule 0) with different seeds.
 
         if (preferWall) {
             int botPathAfter = PathFinder.aStarWithWall(state, bot, bestWall.wall);
             int selfHarm = (botPathAfter >= 0) ? botPathAfter - botDist : 0;
             cumulativeSelfHarm += Math.max(0, selfHarm);
 
-            if (!silent) System.out.println("[BOT v11] >> WALL: " + bestWall.wall
-                    + " (wallVal=" + String.format("%.1f", wallValue)
-                    + " > moveVal=" + String.format("%.1f", moveValue)
-                    + " selfHarmTotal=" + cumulativeSelfHarm + ")");
+            if (!silent) System.out.println("placing wall: " + bestWall.wall);
             return doWall(BotAction.wall(bestWall.wall, bestWall.score));
         }
 
         if (bestMove != null) {
-            if (!silent) System.out.println("[BOT v11] >> MOVE: " + bestMove.target
-                    + " (moveVal=" + String.format("%.1f", moveValue)
-                    + ", wallVal=" + String.format("%.1f", wallValue) + ")");
+            if (!silent) System.out.println("moving to: " + bestMove.target);
             return doMove(BotAction.move(bestMove.target, bestMove.score));
         }
 
@@ -458,9 +373,7 @@ public class BotBrain {
         return null;
     }
 
-    /**
-     * Checks if the bot has any move that advances toward its goal row.
-     */
+    /** Checks if there's any move that goes toward the goal. */
     private boolean hasForwardMoveAvailable(GameState state, Player bot) {
         List<Position> validMoves = MoveValidator.getValidMoves(state, bot);
         int botRow = bot.getPosition().getRow();
@@ -476,7 +389,7 @@ public class BotBrain {
         return false;
     }
 
-    // ==================== ACTION WRAPPERS ====================
+    // action wrappers - track consecutive walls
 
     private BotAction doMove(BotAction action) {
         if (action != null) {
@@ -499,7 +412,7 @@ public class BotBrain {
         BoardGraph graph = new BoardGraph();
         graph.buildFromState(state, opponent.getPosition());
 
-        // forceMove is for instant wins — NO noise (always pick the best winning move)
+        // for instant wins, always pick the best move
         MoveEvaluator.ScoredMove bestMove = MoveEvaluator.findBestMove(state, graph);
         if (bestMove != null) {
             return BotAction.move(bestMove.target, bestMove.score);
@@ -508,10 +421,7 @@ public class BotBrain {
         return null;
     }
 
-    /**
-     * 2-ply lookahead: Evaluates a move by simulating opponent's best response.
-     * Returns adjusted score based on how the position looks after opponent moves.
-     */
+    /** 2-ply lookahead - simulates opponent's best response. */
     private double evaluateWithLookahead(GameState state, Position move, int depth) {
         if (depth <= 0) return 0;
 
@@ -519,7 +429,7 @@ public class BotBrain {
         Player simBot = sim.getCurrentPlayer();
         Player simOpp = sim.getOtherPlayer();
 
-        // Apply our move
+        // apply our move
         simBot.setPosition(move);
         sim.checkWinCondition();
         if (sim.isGameOver()) {
@@ -528,11 +438,11 @@ public class BotBrain {
 
         sim.nextTurn();
 
-        // Get opponent's best response
+        // check opponent's best response
         int botDistAfter = PathFinder.aStarShortestPath(sim, simBot);
         int oppDistBefore = PathFinder.aStarShortestPath(sim, simOpp);
 
-        // Simulate opponent's best move
+        // simulate opponent's best move
         java.util.List<Position> oppMoves = MoveValidator.getValidMoves(sim, simOpp);
         int bestOppDist = oppDistBefore;
         Position bestOppMove = null;
@@ -549,28 +459,24 @@ public class BotBrain {
             }
         }
 
-        // Calculate position score after opponent's response
-        // Positive = we're ahead, negative = we're behind
+        // positive = we're ahead, negative = behind
         double raceScore = (bestOppDist - botDistAfter) * 5.0;
 
-        // Check if opponent can win next turn
+        // opponent about to win is really bad
         if (bestOppDist <= 1) {
-            raceScore -= 50.0; // Critical danger
+            raceScore -= 50.0;
         }
 
         return raceScore;
     }
 
-    /**
-     * Deep evaluation of a wall placement.
-     * Considers opponent's best response and the resulting race state.
-     */
+    /** Evaluates a wall by simulating opponent's response. */
     private double evaluateWallWithLookahead(GameState state, Wall wall) {
         GameState sim = state.deepCopy();
         Player simBot = sim.getCurrentPlayer();
         Player simOpp = sim.getOtherPlayer();
 
-        // Place the wall
+        // place the wall
         wall.setOwnerIndex(sim.getCurrentPlayerIndex());
         sim.addWall(wall);
 
@@ -579,10 +485,10 @@ public class BotBrain {
 
         if (botDistAfter < 0 || oppDistAfter < 0) return -1000.0;
 
-        // Simulate opponent's turn
+        // simulate opponent's turn
         sim.nextTurn();
 
-        // Find opponent's best move response
+        // find opponent's best move response
         java.util.List<Position> oppMoves = MoveValidator.getValidMoves(sim, simOpp);
         int bestOppDistAfterMove = oppDistAfter;
 
@@ -597,15 +503,11 @@ public class BotBrain {
             }
         }
 
-        // Score = race advantage after wall + opponent's best response
+        // score = race advantage after wall + opponent's response
         return (bestOppDistAfterMove - botDistAfter) * 3.0;
     }
 
-    /**
-     * Evaluates a position and returns a normalized score in [0, 1].
-     * Uses BotBrain's internal logic: best action score + race advantage.
-     * This is used as training labels for the ML bot.
-     */
+    /** Gives a score for how good this position is, normalized to [0, 1]. */
     public double evaluatePosition(GameState state) {
         Player bot = state.getCurrentPlayer();
         Player opponent = state.getOtherPlayer();
@@ -615,14 +517,12 @@ public class BotBrain {
         if (botDist < 0) botDist = 20;
         if (oppDist < 0) oppDist = 20;
 
-        // Instant win
-        if (botDist <= 1) return 0.99;
-        // Opponent about to win
-        if (oppDist <= 1) return 0.05;
+        if (botDist <= 1) return 0.99;  // instant win
+        if (oppDist <= 1) return 0.05; // opponent about to win
 
-        int raceGap = oppDist - botDist; // positive = we're ahead
+        int raceGap = oppDist - botDist;
 
-        // Get best move score
+        // get best move score
         double moveScore = 0;
         try {
             BoardGraph graph = new BoardGraph();
@@ -631,10 +531,10 @@ public class BotBrain {
             if (bestMove != null) moveScore = bestMove.score;
         } catch (Exception e) { moveScore = 30; }
 
-        // Composite: action quality + race advantage
+        // combine action quality + race advantage
         double rawScore = moveScore + raceGap * 10.0;
 
-        // Sigmoid normalize to [0, 1]
+        // sigmoid to normalize
         return 1.0 / (1.0 + Math.exp(-rawScore / 30.0));
     }
 }

@@ -3,31 +3,20 @@ package ml;
 import java.io.*;
 import java.util.Random;
 
-/**
- * From-scratch feedforward neural network.
- * No external libraries — pure Java arrays and math.
- *
- * Architecture: configurable layers with ReLU hidden activations and Sigmoid output.
- * Training: mini-batch SGD with momentum.
- * Loss: Mean Squared Error (MSE).
- *
- * Default for Quoridor: 22 → 64 → 32 → 16 → 1
- */
+// Feedforward neural network written from scratch. ReLU hidden, sigmoid output, MSE loss.
 public class NeuralNetwork {
 
     private final int[] layerSizes;
     private final int numLayers; // number of weight layers (= layerSizes.length - 1)
 
-    // Weights: weights[L][j][i] = weight from neuron i in layer L to neuron j in layer L+1
+    // weights[L][j][i] = weight from neuron i in layer L to neuron j in layer L+1
     private double[][][] weights;
-    // Biases: biases[L][j] = bias for neuron j in layer L+1
+    // biases[L][j] = bias for neuron j in layer L+1
     private double[][] biases;
 
-    // Momentum velocities
+    // momentum velocities
     private double[][][] velocityW;
     private double[][] velocityB;
-
-    // === Constructor ===
 
     public NeuralNetwork(int... layerSizes) {
         this.layerSizes = layerSizes;
@@ -46,23 +35,20 @@ public class NeuralNetwork {
             velocityW[L] = new double[fanOut][fanIn];
             velocityB[L] = new double[fanOut];
 
-            // He initialization: stddev = sqrt(2 / fanIn)
+            // he init
             double stddev = Math.sqrt(2.0 / fanIn);
             for (int j = 0; j < fanOut; j++) {
                 for (int i = 0; i < fanIn; i++) {
                     weights[L][j][i] = rng.nextGaussian() * stddev;
                 }
-                biases[L][j] = 0.01; // small positive bias for ReLU
+                biases[L][j] = 0.01; // small bias so relu units start active
             }
         }
     }
 
-    // === Forward Pass ===
+    // forward pass
 
-    /**
-     * Forward pass. Returns the output (single value for value network).
-     * Also stores intermediate values for backpropagation.
-     */
+    /** Returns output + intermediate values needed for backprop. */
     public ForwardResult forward(double[] input) {
         double[][] activations = new double[numLayers + 1][];
         double[][] preActivations = new double[numLayers][];
@@ -82,11 +68,11 @@ public class NeuralNetwork {
                 }
                 preActivations[L][j] = sum;
 
-                // Activation: ReLU for hidden layers, Sigmoid for output
+                // relu for hidden, sigmoid for output
                 if (L < numLayers - 1) {
-                    activations[L + 1][j] = Math.max(0, sum); // ReLU
+                    activations[L + 1][j] = Math.max(0, sum);
                 } else {
-                    activations[L + 1][j] = 1.0 / (1.0 + Math.exp(-sum)); // Sigmoid
+                    activations[L + 1][j] = 1.0 / (1.0 + Math.exp(-sum));
                 }
             }
         }
@@ -94,19 +80,14 @@ public class NeuralNetwork {
         return new ForwardResult(activations, preActivations);
     }
 
-    /**
-     * Simple predict — just returns the output value.
-     */
+    /** Just returns the output value. */
     public double predict(double[] input) {
         return forward(input).getOutput()[0];
     }
 
-    // === Backpropagation ===
+    // backprop
 
-    /**
-     * Computes gradients for one sample using backpropagation.
-     * Returns the gradients (dW, dB) without applying them.
-     */
+    /** Computes gradients for one sample. Doesn't apply them. */
     public Gradients backprop(double[] input, double target) {
         ForwardResult fwd = forward(input);
         double[][] activations = fwd.activations;
@@ -116,14 +97,14 @@ public class NeuralNetwork {
         double[][] dB = new double[numLayers][];
         double[][] deltas = new double[numLayers][];
 
-        // Output layer delta: (predicted - target) * sigmoid'(z)
+        // output layer delta
         int lastL = numLayers - 1;
         double predicted = activations[numLayers][0];
         double error = predicted - target;
         double sigmoidDeriv = predicted * (1 - predicted);
         deltas[lastL] = new double[]{error * sigmoidDeriv};
 
-        // Hidden layer deltas (backward)
+        // hidden layer deltas (backward)
         for (int L = lastL - 1; L >= 0; L--) {
             int size = layerSizes[L + 1];
             int nextSize = layerSizes[L + 2];
@@ -134,12 +115,12 @@ public class NeuralNetwork {
                 for (int k = 0; k < nextSize; k++) {
                     sum += weights[L + 1][k][j] * deltas[L + 1][k];
                 }
-                // ReLU derivative: 1 if z > 0, else 0
+                // relu derivative: 1 if z > 0, else 0
                 deltas[L][j] = sum * (preActivations[L][j] > 0 ? 1.0 : 0.0);
             }
         }
 
-        // Compute gradients
+        // compute gradients
         for (int L = 0; L < numLayers; L++) {
             int outSize = layerSizes[L + 1];
             int inSize = layerSizes[L];
@@ -158,11 +139,7 @@ public class NeuralNetwork {
         return new Gradients(dW, dB, loss);
     }
 
-    // === Training Step ===
-
-    /**
-     * Updates weights using accumulated gradients from a mini-batch.
-     */
+    /** Updates weights using accumulated gradients from a mini-batch. */
     public void updateWeights(double[][][] gradW, double[][] gradB, int batchSize,
                                double learningRate, double momentum, double weightDecay) {
         for (int L = 0; L < numLayers; L++) {
@@ -170,12 +147,12 @@ public class NeuralNetwork {
             int inSize = layerSizes[L];
 
             for (int j = 0; j < outSize; j++) {
-                // Bias update
+                // bias update
                 velocityB[L][j] = momentum * velocityB[L][j]
                         - learningRate * (gradB[L][j] / batchSize);
                 biases[L][j] += velocityB[L][j];
 
-                // Weight update with L2 regularization
+                // weight update with L2 regularization
                 for (int i = 0; i < inSize; i++) {
                     velocityW[L][j][i] = momentum * velocityW[L][j][i]
                             - learningRate * (gradW[L][j][i] / batchSize + weightDecay * weights[L][j][i]);
@@ -185,15 +162,13 @@ public class NeuralNetwork {
         }
     }
 
-    // === Save / Load ===
+    // save / load
 
     public void save(String filePath) throws IOException {
         try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(filePath)))) {
-            // Write layer sizes
             out.writeInt(layerSizes.length);
             for (int s : layerSizes) out.writeInt(s);
 
-            // Write weights and biases
             for (int L = 0; L < numLayers; L++) {
                 for (int j = 0; j < layerSizes[L + 1]; j++) {
                     for (int i = 0; i < layerSizes[L]; i++) {
@@ -234,8 +209,6 @@ public class NeuralNetwork {
         }
         return count;
     }
-
-    // === Inner classes ===
 
     public static class ForwardResult {
         public final double[][] activations;

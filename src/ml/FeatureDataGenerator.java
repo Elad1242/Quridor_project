@@ -18,14 +18,8 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Generates training data with 27 features (22 global + 5 per-action).
- *
- * For each BotBrain turn:
- *   - BotBrain's chosen action → compute 27 features → label 0.9 (good)
- *   - 2 random alternative actions → compute 27 features → label 0.1 (bad)
- *
- * The NN learns to distinguish good actions from bad ones using per-action features
- * (pathGain, rowAdvance, pathDamage, netDamage, actionType).
+ * Generates training data with 27 features.
+ * BotBrain's chosen action gets label 0.9, random alternatives get 0.1.
  */
 public class FeatureDataGenerator {
 
@@ -37,7 +31,7 @@ public class FeatureDataGenerator {
         String outputFile = (args.length > 1) ? args[1] : "training_features.dat";
 
         WallEvaluator.silent = true;
-        System.out.println("=== Pairwise Preference Data Generator (27 features) ===");
+        System.out.println("Pairwise Preference Data Generator (27 features)");
         System.out.println("Games: " + numGames);
 
         int threads = Runtime.getRuntime().availableProcessors();
@@ -46,8 +40,8 @@ public class FeatureDataGenerator {
         AtomicInteger completed = new AtomicInteger(0);
         AtomicInteger totalSamples = new AtomicInteger(0);
 
-        List<double[]> allFeatures = java.util.Collections.synchronizedList(new ArrayList<>());
-        List<Double> allLabels = java.util.Collections.synchronizedList(new ArrayList<>());
+        List<double[]> allFeatures = new ArrayList<>();
+        List<Double> allLabels = new ArrayList<>();
 
         int perThread = numGames / threads;
         ExecutorService exec = Executors.newFixedThreadPool(threads);
@@ -66,8 +60,7 @@ public class FeatureDataGenerator {
 
                         int c = completed.incrementAndGet();
                         if (c % 5000 == 0) {
-                            System.out.printf("  %d/%d games, %d samples%n",
-                                    c, numGames, totalSamples.get());
+                            System.out.println("  " + c + "/" + numGames + " games, " + totalSamples.get() + " samples");
                         }
                     }
                 } catch (Exception e) { e.printStackTrace(); }
@@ -79,7 +72,7 @@ public class FeatureDataGenerator {
         exec.shutdown();
 
         long elapsed = (System.currentTimeMillis() - start) / 1000;
-        System.out.printf("Done in %ds. Samples: %d%n", elapsed, allFeatures.size());
+        System.out.println("Done in " + elapsed + "s. Samples: " + allFeatures.size());
 
         writeData(outputFile, allFeatures, allLabels);
         System.out.println("Written to " + outputFile);
@@ -96,7 +89,7 @@ public class FeatureDataGenerator {
         int turns = 0;
         while (!state.isGameOver() && turns < MAX_TURNS) {
             if (state.getCurrentPlayerIndex() == 0) {
-                // BotBrain's turn — record chosen action + random alternatives
+                // BotBrain's turn - record chosen action + random alternatives
                 try {
                     Player me = state.getCurrentPlayer();
                     List<Position> validMoves = MoveValidator.getValidMoves(state, me);
@@ -104,7 +97,7 @@ public class FeatureDataGenerator {
                     BotBrain.BotAction chosen = bot.computeBestAction(state);
                     if (chosen == null) break;
 
-                    // Compute features for CHOSEN action → label 0.9
+                    // chosen action gets label 0.9
                     double[] chosenFeatures = computeActionFeatures(state, chosen);
                     if (chosenFeatures != null) {
                         allFeatures.add(chosenFeatures);
@@ -112,7 +105,7 @@ public class FeatureDataGenerator {
                         totalSamples.incrementAndGet();
                     }
 
-                    // Compute features for RANDOM alternatives → label 0.1
+                    // random alternatives get label 0.1
                     List<Object> alternatives = getAlternativeActions(state, me, chosen, rng);
                     for (Object alt : alternatives) {
                         double[] altFeatures = computeAltFeatures(state, alt);
@@ -123,7 +116,7 @@ public class FeatureDataGenerator {
                         }
                     }
 
-                    // Apply BotBrain's chosen action
+                    // apply BotBrain's chosen action
                     if (chosen.type == BotBrain.BotAction.Type.MOVE) {
                         state.getCurrentPlayer().setPosition(chosen.moveTarget);
                     } else {
@@ -158,15 +151,13 @@ public class FeatureDataGenerator {
         return null;
     }
 
-    /**
-     * Gets 2 random alternative actions that are DIFFERENT from BotBrain's choice.
-     */
+    /** Gets 2 random alternative actions that are different from BotBrain's choice. */
     private static List<Object> getAlternativeActions(GameState state, Player me,
                                                         BotBrain.BotAction chosen, Random rng) {
         List<Object> alts = new ArrayList<>();
         List<Object> candidates = new ArrayList<>();
 
-        // Add all legal moves (except chosen)
+        // add all legal moves (except chosen)
         List<Position> moves = MoveValidator.getValidMoves(state, me);
         for (Position p : moves) {
             if (chosen.type == BotBrain.BotAction.Type.MOVE && p.equals(chosen.moveTarget))
@@ -174,7 +165,7 @@ public class FeatureDataGenerator {
             candidates.add(p);
         }
 
-        // Add some legal walls (except chosen)
+        // add some legal walls (except chosen)
         if (me.getWallsRemaining() > 0) {
             List<Wall> walls = new ArrayList<>();
             for (int r = 0; r < 8; r++) {
@@ -193,7 +184,7 @@ public class FeatureDataGenerator {
                     }
                 }
             }
-            // Sample up to 5 random walls (not all 128)
+            // sample up to 5 random walls (not all 128)
             for (int i = 0; i < Math.min(5, walls.size()); i++) {
                 int idx = rng.nextInt(walls.size());
                 candidates.add(walls.get(idx));
@@ -201,7 +192,7 @@ public class FeatureDataGenerator {
             }
         }
 
-        // Pick RANDOM_ALTERNATIVES from candidates
+        // pick RANDOM_ALTERNATIVES from candidates
         for (int i = 0; i < RANDOM_ALTERNATIVES && !candidates.isEmpty(); i++) {
             int idx = rng.nextInt(candidates.size());
             alts.add(candidates.get(idx));
@@ -248,7 +239,7 @@ public class FeatureDataGenerator {
         }
     }
 
-    // === I/O ===
+    // I/O
 
     public static void writeData(String path, List<double[]> features, List<Double> labels) throws IOException {
         try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(path)))) {

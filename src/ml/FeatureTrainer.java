@@ -2,32 +2,24 @@ package ml;
 
 import java.util.Random;
 
-/**
- * Trains the from-scratch NeuralNetwork on feature data.
- * Mini-batch SGD with momentum, MSE loss, early stopping.
- *
- * Usage: java ml.FeatureTrainer [dataFile] [modelOutputPath]
- */
+// Trains the neural network on feature data. Mini-batch SGD with momentum and early stopping.
 public class FeatureTrainer {
 
     public static void main(String[] args) throws Exception {
         String dataFile = (args.length > 0) ? args[0] : "training_features.dat";
         String modelPath = (args.length > 1) ? args[1] : "feature_model.bin";
 
-        System.out.println("=== Feature Network Trainer ===");
+        System.out.println("Feature Network Trainer");
         System.out.println("Data: " + dataFile);
 
         FeatureDataGenerator.TrainingData data = FeatureDataGenerator.readData(dataFile);
         System.out.println("Samples: " + data.size());
 
-        // Label distribution
+        // label distribution
         int wins = 0;
         for (double l : data.labels) if (l > 0.5) wins++;
-        System.out.printf("Labels — win: %d (%.1f%%), loss: %d (%.1f%%)%n",
-                wins, 100.0 * wins / data.size(),
-                data.size() - wins, 100.0 * (data.size() - wins) / data.size());
+        System.out.println("Labels - win: " + wins + " (" + (100.0 * wins / data.size()) + "%), loss: " + (data.size() - wins));
 
-        // Train
         NeuralNetwork nn = trainNetwork(data, modelPath);
 
         System.out.println("\nTraining complete. Model saved to " + modelPath);
@@ -37,7 +29,7 @@ public class FeatureTrainer {
     public static NeuralNetwork trainNetwork(FeatureDataGenerator.TrainingData data, String modelPath) throws Exception {
         Random rng = new Random(42);
 
-        // Split: 90% train, 10% val
+        // split 90/10 train/val
         data.shuffle(rng);
         int trainSize = (int) (data.size() * 0.9);
         double[][] trainX = new double[trainSize][];
@@ -52,11 +44,11 @@ public class FeatureTrainer {
 
         System.out.println("Train: " + trainSize + ", Val: " + valX.length);
 
-        // Create network: 22 → 64 → 32 → 16 → 1
+        // create network
         NeuralNetwork nn = new NeuralNetwork(GameFeatures.TOTAL_FEATURES, 64, 32, 16, 1);
-        System.out.println("Network: 22→64→32→16→1, params=" + nn.getParamCount());
+        System.out.println("Network: 22->64->32->16->1, params=" + nn.getParamCount());
 
-        // Hyperparameters
+        // hyperparams
         double lr = 0.001;
         double momentum = 0.9;
         double weightDecay = 1e-5;
@@ -69,14 +61,14 @@ public class FeatureTrainer {
         long startTime = System.currentTimeMillis();
 
         for (int epoch = 0; epoch < maxEpochs; epoch++) {
-            // Shuffle training data
+            // shuffle training data
             for (int i = trainSize - 1; i > 0; i--) {
                 int j = rng.nextInt(i + 1);
                 double[] tmpX = trainX[i]; trainX[i] = trainX[j]; trainX[j] = tmpX;
                 double tmpY = trainY[i]; trainY[i] = trainY[j]; trainY[j] = tmpY;
             }
 
-            // Train one epoch
+            // train one epoch
             double trainLoss = 0;
             int batches = 0;
 
@@ -84,7 +76,7 @@ public class FeatureTrainer {
                 int end = Math.min(i + batchSize, trainSize);
                 int len = end - i;
 
-                // Accumulate gradients
+                // accumulate gradients
                 double[][][] gradW = null;
                 double[][] gradB = null;
                 double batchLoss = 0;
@@ -115,7 +107,7 @@ public class FeatureTrainer {
 
             trainLoss /= batches;
 
-            // Validation loss (every 5 epochs)
+            // validation every 5 epochs
             if (epoch % 5 == 0 || epoch == maxEpochs - 1) {
                 double valLoss = 0;
                 int correct = 0;
@@ -129,30 +121,29 @@ public class FeatureTrainer {
                 double valAcc = 100.0 * correct / valX.length;
 
                 long elapsed = (System.currentTimeMillis() - startTime) / 1000;
-                System.out.printf("Epoch %d/%d (%ds) — trainLoss=%.5f, valLoss=%.5f, valAcc=%.1f%%, lr=%.6f%n",
-                        epoch + 1, maxEpochs, elapsed, trainLoss, valLoss, valAcc, lr);
+                System.out.println("Epoch " + (epoch + 1) + "/" + maxEpochs + " (" + elapsed + "s) loss=" + trainLoss + " valLoss=" + valLoss + " acc=" + valAcc + "%");
 
                 if (valLoss < bestValLoss) {
                     bestValLoss = valLoss;
                     noImproveCount = 0;
                     nn.save(modelPath);
-                    System.out.printf("  >> Best model saved (valLoss=%.5f)%n", bestValLoss);
+                    System.out.println("  >> best model saved (valLoss=" + bestValLoss + ")");
                 } else {
                     noImproveCount += 5;
                     if (noImproveCount >= patience / 2 && lr > 1e-5) {
                         lr *= 0.5;
-                        System.out.printf("  >> LR reduced to %.6f%n", lr);
+                        System.out.println("  >> lr reduced to " + lr);
                         noImproveCount = 0; // reset after LR reduction
                     }
                     if (noImproveCount >= patience) {
-                        System.out.println("  >> Early stopping!");
+                        System.out.println("  >> early stopping!");
                         break;
                     }
                 }
             }
         }
 
-        // Load best model
+        // load best model
         return NeuralNetwork.load(modelPath);
     }
 }

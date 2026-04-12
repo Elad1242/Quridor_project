@@ -1,4 +1,5 @@
-package ml;
+package ml.eval;
+import ml.*;
 
 import bot.BotBrain;
 import bot.WallEvaluator;

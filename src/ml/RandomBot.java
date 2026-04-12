@@ -12,10 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-/**
- * Random opponent bots for generating diverse training data.
- * BotBrain plays against these to produce varied board states.
- */
+// Random opponent bots for generating diverse training data.
 public abstract class RandomBot {
 
     protected final Random rng;
@@ -24,12 +21,8 @@ public abstract class RandomBot {
         this.rng = new Random(seed);
     }
 
-    /**
-     * Choose an action: returns either a Position (pawn move) or a Wall.
-     */
+    /** Choose an action: returns either a Position (move) or a Wall. */
     public abstract Object chooseAction(GameState state);
-
-    // --- Utility methods ---
 
     protected List<Position> getForwardAndSidewaysMoves(GameState state, Player player) {
         List<Position> all = MoveValidator.getValidMoves(state, player);
@@ -60,12 +53,7 @@ public abstract class RandomBot {
         return walls;
     }
 
-    // ===== IMPLEMENTATIONS =====
-
-    /**
-     * Picks uniformly from ALL legal actions (moves + walls).
-     * Creates chaotic boards with walls in bizarre positions.
-     */
+    /** Picks uniformly from all legal actions (moves + walls). Creates chaotic boards. */
     public static class UniformRandom extends RandomBot {
         public UniformRandom(long seed) { super(seed); }
 
@@ -87,10 +75,7 @@ public abstract class RandomBot {
         }
     }
 
-    /**
-     * Picks randomly from forward/sideways pawn moves only (never walls, never backward).
-     * Produces games with NO walls — pure movement races with varied pawn paths.
-     */
+    /** Only forward/sideways pawn moves, never walls. Pure movement races. */
     public static class ForwardRandom extends RandomBot {
         public ForwardRandom(long seed) { super(seed); }
 
@@ -102,10 +87,7 @@ public abstract class RandomBot {
         }
     }
 
-    /**
-     * 50% chance random wall, 50% chance random forward/sideways pawn move.
-     * Creates extremely congested boards with walls everywhere.
-     */
+    /** 50/50 random wall or random forward move. Creates congested boards. */
     public static class RandomWaller extends RandomBot {
         public RandomWaller(long seed) { super(seed); }
 
@@ -126,10 +108,7 @@ public abstract class RandomBot {
         }
     }
 
-    /**
-     * 70% follows shortest path, 30% random move. 15% chance of random wall.
-     * Semi-competent but unpredictable opponent.
-     */
+    /** 70% follows shortest path, 30% random move, 15% chance of random wall. */
     public static class SemiSmart extends RandomBot {
         public SemiSmart(long seed) { super(seed); }
 
@@ -147,9 +126,8 @@ public abstract class RandomBot {
 
             List<Position> validMoves = MoveValidator.getValidMoves(state, me);
 
-            // 70% follow shortest path direction
+            // 70% follow shortest path
             if (rng.nextDouble() < 0.7) {
-                // Pick the move that reduces A* distance the most
                 int bestDist = Integer.MAX_VALUE;
                 Position bestMove = validMoves.get(0);
                 for (Position move : validMoves) {

@@ -11,26 +11,7 @@ import model.Wall;
 
 import java.util.*;
 
-/**
- * WALL EVALUATOR v10 — Complete redesign.
- *
- * PREVIOUS VERSIONS FAILED because:
- *   1. "Positional Safety Zone" hard-rejected walls ahead of bot within 4 rows
- *      → In endgame bot couldn't place ANY walls (all rejected)
- *   2. Scoring was too low — walls rarely beat sideways moves (score ~15)
- *   3. "No wall with positive score found" appeared constantly
- *
- * v10 CHANGES:
- *   1. REMOVED hard-rejection of walls ahead of bot. Instead, use SOFT PENALTY
- *      based on how much the wall actually hurts the bot (selfHarm check).
- *   2. SIMPLIFIED scoring: focus on pathDamage, selfHarm, and proximity to opponent.
- *   3. Walls that are ON the opponent's shortest path get big bonuses.
- *   4. The bot's own safety is checked by selfHarm in BotBrain, not here.
- *   5. Emergency mode is more aggressive.
- *
- * KEY INSIGHT: The best wall is the one that maximizes (pathDamage - selfHarm).
- * Everything else (synergy, position, proximity) is a tiebreaker.
- */
+// Scores wall placements. Best wall = highest (pathDamage - selfHarm).
 public class WallEvaluator {
 
     public static boolean silent = false;
@@ -98,12 +79,9 @@ public class WallEvaluator {
 
         if (!silent) {
             if (bestWall != null) {
-                System.out.println("[WALL-EVAL v10] Best wall: " + bestWall.wall
-                        + " score=" + String.format("%.1f", bestWall.score)
-                        + (emergency ? " [EMERGENCY]" : ""));
+                System.out.println("best wall: " + bestWall.wall + " score=" + String.format("%.1f", bestWall.score));
             } else {
-                System.out.println("[WALL-EVAL v10] No wall with positive score found."
-                        + (emergency ? " [EMERGENCY MODE ACTIVE]" : ""));
+                System.out.println("no wall with positive score found");
             }
         }
 
@@ -116,18 +94,17 @@ public class WallEvaluator {
                                      Set<String> onOpponentPath,
                                      boolean emergency) {
 
-        // === Compute path impact ===
+        // compute path impact
         int opponentPathAfter = PathFinder.aStarWithWall(state, opponent, candidate);
-        if (opponentPathAfter < 0) return -1; // Would trap opponent (illegal)
+        if (opponentPathAfter < 0) return -1; // would block someone off
 
         int botPathAfter = PathFinder.aStarWithWall(state, bot, candidate);
-        if (botPathAfter < 0) return -1; // Would trap bot (illegal)
+        if (botPathAfter < 0) return -1; // would block us off
 
         int pathDamage = opponentPathAfter - opponentPathBefore;
         int selfHarm = botPathAfter - botPathBefore;
 
-        // === HARD REJECTIONS ===
-        if (pathDamage <= 0) return -1; // Wall doesn't slow opponent at all
+        if (pathDamage <= 0) return -1; // wall doesn't slow opponent
 
         // Emergency: accept more self-harm
         if (emergency) {
@@ -141,24 +118,23 @@ public class WallEvaluator {
             if (botPathAfter >= 16 && selfHarm >= 2) return -1;
         }
 
-        // === FLOW SAFETY CHECK ===
+        // flow safety check
         // Reject walls that drastically reduce bot's flexibility (unless emergency)
         if (!emergency && selfHarm >= 1) {
             int botFlowBefore = FlowCalculator.calculateMaxFlow(state, bot);
             if (botFlowBefore > 1) {
                 int botFlowAfter = FlowCalculator.calculateMaxFlowWithWall(state, bot, candidate);
                 if (botFlowAfter <= 1 && pathDamage < 4) {
-                    return -1; // Wall makes bot very vulnerable
+                    return -1; // makes us too vulnerable
                 }
             }
         }
 
-        // === SCORING ===
-        // PRIMARY: net advantage (pathDamage - selfHarm)
+        // net advantage is the main signal
         double netAdvantage = pathDamage - selfHarm;
         double score = netAdvantage * 3.0;
 
-        // SECONDARY: raw path damage (quadratic — big damage is disproportionately good)
+        // raw path damage (quadratic scaling)
         score += pathDamage * pathDamage * 0.5;
 
         // Emergency bonus
@@ -166,7 +142,7 @@ public class WallEvaluator {
             score += pathDamage * 5.0;
         }
 
-        // === STEP DAMAGE BONUSES ===
+        // step damage bonuses
         if (pathDamage >= 5) score += 8.0;
         else if (pathDamage >= 4) score += 5.0;
         else if (pathDamage >= 3) score += 3.0;
@@ -180,25 +156,24 @@ public class WallEvaluator {
             score -= selfHarm * (emergency ? 1.0 : 2.0);
         }
 
-        // === WALL SYNERGY (improved) ===
+        // wall synergy
         int synergy = countAdjacentWalls(state, candidate);
         score += synergy * 2.5;
 
-        // BARRIER CREATION BONUS: Walls that extend existing barriers are very valuable
-        // because they create longer walls that are harder to navigate around
+        // extending existing barriers is extra good
         if (synergy >= 2) {
-            score += 5.0;  // Bonus for creating extended barriers
+            score += 5.0;
         }
 
-        // Check if this wall creates a "funnel" - forces opponent to specific path
+        // funnel bonus - forces opponent through a narrow path
         int funnelBonus = evaluateFunnelCreation(state, candidate, opponent, opponentPathBefore);
         score += funnelBonus;
 
-        // Kill zone bonus - walls near opponent's goal are very valuable
+        // walls near opponent's goal are extra valuable
         double killZoneBonus = evaluateKillZone(state, candidate, opponent);
         score += killZoneBonus;
 
-        // === POSITIONAL SCORING ===
+        // positional scoring
         int oppRow = opponent.getPosition().getRow();
         int oppGoalRow = opponent.getGoalRow();
         int wallRow = candidate.getRow();
@@ -208,14 +183,13 @@ public class WallEvaluator {
         int distanceAheadOfOpp = (wallRow - oppRow) * oppDirection;
         int absDistFromOpp = Math.abs(wallRow - oppRow);
 
-        // === ON OPPONENT'S PATH BONUS ===
+        // bonus if wall is on opponent's path
         boolean nearPath = onOpponentPath.contains(wallRow + "," + wallCol)
                         || onOpponentPath.contains(wallRow + "," + (wallCol + 1))
                         || onOpponentPath.contains((wallRow + 1) + "," + wallCol);
         if (nearPath) score += 3.0;
 
-        // === AHEAD OF OPPONENT BONUS ===
-        // Walls ahead of the opponent (between them and their goal) are most effective
+        // walls between opponent and their goal are most effective
         if (distanceAheadOfOpp >= 0 && distanceAheadOfOpp <= 2) {
             score += 3.0;
         } else if (distanceAheadOfOpp == 3) {
@@ -223,11 +197,10 @@ public class WallEvaluator {
         } else if (distanceAheadOfOpp == 4) {
             score += 1.0;
         } else if (distanceAheadOfOpp < 0 && distanceAheadOfOpp >= -2) {
-            score += 0.5; // Just behind opponent — can still be useful
+            score += 0.5; // just behind opponent, can still help
         }
 
-        // === DISTANCE PENALTY ===
-        // Walls far from the opponent are less useful
+        // walls far from opponent are less useful
         if (emergency) {
             if (absDistFromOpp >= 7) score *= 0.3;
             else if (absDistFromOpp >= 6) score *= 0.5;
@@ -245,10 +218,7 @@ public class WallEvaluator {
         else if (colDist >= 5) score *= 0.5;
         else if (colDist >= 4) score *= 0.7;
 
-        // === SOFT POSITIONAL PENALTY (replaces hard rejection in v8) ===
-        // Walls ahead of BOT between bot and its goal are somewhat risky.
-        // But this is a SOFT penalty, not hard rejection. The selfHarm check
-        // in BotBrain handles the real safety check.
+        // soft penalty for walls near our own path (BotBrain does the real safety check)
         int botRow = bot.getPosition().getRow();
         int botGoalRow = bot.getGoalRow();
         int botDirection = (botGoalRow > botRow) ? 1 : -1;
@@ -257,15 +227,13 @@ public class WallEvaluator {
         if (!emergency) {
             if (candidate.isHorizontal()) {
                 if (distanceBehindBot < 0 && -distanceBehindBot <= 2) {
-                    // Horizontal wall 1-2 rows ahead of bot — somewhat risky
-                    score *= 0.6;
+                    score *= 0.6; // horizontal wall ahead of us, risky
                 } else if (distanceBehindBot == 0) {
-                    // At bot's current row
-                    score *= 0.4;
+                    score *= 0.4; // at our current row
                 }
             }
             if (candidate.isVertical() && distanceBehindBot < 0 && -distanceBehindBot <= 2) {
-                score *= 0.8; // Lighter penalty for vertical walls ahead
+                score *= 0.8; // lighter penalty for vertical walls
             }
         }
 
@@ -297,22 +265,18 @@ public class WallEvaluator {
         return count;
     }
 
-    /**
-     * Evaluates if this wall creates a "funnel" effect - forcing opponent
-     * to take a specific narrow path that can be blocked later.
-     */
+    // Bonus for walls that funnel opponent through bottlenecks
     private static int evaluateFunnelCreation(GameState state, Wall candidate,
                                                Player opponent, int oppPathBefore) {
-        // Simulate placing the wall
+        // simulate placing the wall
         GameState sim = state.deepCopy();
         sim.addWall(candidate);
 
-        // Get opponent's new path
+        // get opponent's new path
         List<Position> newPath = PathFinder.getAStarPath(sim, opponent);
         if (newPath == null || newPath.size() < 2) return 0;
 
-        // Count how many "bottleneck" positions the opponent must pass through
-        // A bottleneck is a position where the opponent has limited options
+        // count bottleneck positions (where opponent has few options)
         int bottleneckCount = 0;
         Player simOpp = sim.getOtherPlayer();
 
@@ -323,28 +287,23 @@ public class WallEvaluator {
             List<Position> movesFromPos = MoveValidator.getValidMoves(sim, simOpp);
             simOpp.setPosition(origPos);
 
-            // If opponent has only 1-2 valid moves from this position, it's a bottleneck
             if (movesFromPos.size() <= 2) {
                 bottleneckCount++;
             }
         }
 
-        // More bottlenecks = better funnel
+        // more bottlenecks = better
         return bottleneckCount * 2;
     }
 
-    /**
-     * Evaluates if wall placement helps create a "kill zone" near opponent's goal.
-     * Kill zones are areas where walls can trap or severely slow the opponent.
-     */
+    // Bonus for walls near opponent's goal row
     public static double evaluateKillZone(GameState state, Wall candidate, Player opponent) {
         int oppGoalRow = opponent.getGoalRow();
         int wallRow = candidate.getRow();
 
-        // Walls in the last 2 rows before opponent's goal are extremely valuable
         int distToGoal = Math.abs(wallRow - oppGoalRow);
         if (distToGoal <= 1) {
-            return 8.0;  // Critical position
+            return 8.0;
         } else if (distToGoal == 2) {
             return 4.0;
         } else if (distToGoal == 3) {

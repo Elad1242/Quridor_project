@@ -4,22 +4,12 @@ import model.GameState;
 import model.Position;
 import model.Wall;
 
-/**
- * MLBot — GUI-facing wrapper around FeatureBot (pure-Java feedforward NN).
- *
- * Loads feature_model.bin (our from-scratch neural network trained on
- * 27 features: 22 global + 5 per-action). No external ML libraries.
- *
- * Keeps the exact API expected by GameController so the GUI needs no changes.
- */
+// GUI-facing wrapper around FeatureBot. Keeps the API that GameController expects.
 public class MLBot {
 
     private final FeatureBot inner;
 
-    /**
-     * Legacy constructor kept for GameController compatibility.
-     * Ignores the arguments and loads "feature_model.bin" from the working directory.
-     */
+    /** Loads feature_model.bin. Args are ignored (kept for GameController compat). */
     public MLBot(String modelDir, String modelName) throws Exception {
         this.inner = new FeatureBot("feature_model.bin");
     }
@@ -38,10 +28,8 @@ public class MLBot {
     }
 
     public void close() {
-        // FeatureBot holds a pure-Java NN, nothing to close
+        // nothing to close, it's a pure java NN
     }
-
-    // === Action class — same shape as the old CNN MLBot.Action ===
 
     public static class Action {
         public enum Type { MOVE, WALL }
@@ -59,8 +47,8 @@ public class MLBot {
 
         @Override
         public String toString() {
-            if (type == Type.MOVE) return String.format("MOVE to %s (%.3f)", moveTarget, score);
-            return String.format("WALL at %s %s (%.3f)", wall.getPosition(), wall.getOrientation(), score);
+            if (type == Type.MOVE) return "MOVE to " + moveTarget + " (" + score + ")";
+            return "WALL at " + wall.getPosition() + " " + wall.getOrientation() + " (" + score + ")";
         }
     }
 }

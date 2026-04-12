@@ -7,11 +7,7 @@ import model.Position;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Handles pawn movement validation.
- * Pawns move one cell orthogonally, can jump over adjacent opponents,
- * and can do side jumps if the straight jump is blocked.
- */
+// Handles pawn movement - regular moves and jump moves over the opponent.
 public class MoveValidator {
 
     // Checks if moving from one position to another is valid
