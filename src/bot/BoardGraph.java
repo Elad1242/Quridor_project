@@ -89,15 +89,13 @@ public class BoardGraph {
             int wallRow = wall.getRow();
             int wallCol = wall.getCol();
 
-            // A wall spans 2 cells - check both endpoints
+            // each wall spans 2 cells
             if (wall.isHorizontal()) {
-                // Horizontal wall covers (wallRow, wallCol) to (wallRow, wallCol+1)
                 if (manhattanDistance(pos, new Position(wallRow, wallCol)) <= radius ||
                     manhattanDistance(pos, new Position(wallRow, wallCol + 1)) <= radius) {
                     count++;
                 }
             } else {
-                // Vertical wall covers (wallRow, wallCol) to (wallRow+1, wallCol)
                 if (manhattanDistance(pos, new Position(wallRow, wallCol)) <= radius ||
                     manhattanDistance(pos, new Position(wallRow + 1, wallCol)) <= radius) {
                     count++;
@@ -111,7 +109,7 @@ public class BoardGraph {
         return Math.abs(a.getRow() - b.getRow()) + Math.abs(a.getCol() - b.getCol());
     }
 
-    // Build graph from a specific player's perspective
+    // same thing but for a specific player (used by feature extraction)
     public void buildFromStateForPlayer(GameState state, Position opponentPos, int playerIndex) {
         adjacency.clear();
         this.botPlayerIndex = playerIndex;
@@ -137,7 +135,7 @@ public class BoardGraph {
         }
     }
 
-    // Returns neighbors with edge weights for Dijkstra
+    // get neighbors with their edge weights
     public Map<Position, Double> getNeighbors(Position pos) {
         return adjacency.getOrDefault(pos, Collections.emptyMap());
     }

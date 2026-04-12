@@ -1,4 +1,5 @@
-package bot;
+package tests;
+import bot.*;
 
 import logic.FlowCalculator;
 import logic.MoveValidator;
