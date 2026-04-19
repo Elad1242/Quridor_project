@@ -125,32 +125,33 @@ public class PathFinder {
             int col = (int) current[3];
             Position currentPos = new Position(row, col);
 
-            if (closedSet.contains(currentPos)) continue;
-            closedSet.add(currentPos);
+            if (!closedSet.contains(currentPos)) {
+                closedSet.add(currentPos);
 
-            // reached the goal
-            if (currentPos.getRow() == goalRow) {
-                return reconstructPath(cameFrom, currentPos);
-            }
+                // reached the goal
+                if (currentPos.getRow() == goalRow) {
+                    return reconstructPath(cameFrom, currentPos);
+                }
 
-            double currentG = gScore.get(currentPos);
+                double currentG = gScore.get(currentPos);
 
-            for (int[] dir : directions) {
-                Position neighbor = currentPos.move(dir[0], dir[1]);
-                if (!neighbor.isValid()) continue;
-                if (closedSet.contains(neighbor)) continue;
+                for (int[] dir : directions) {
+                    Position neighbor = currentPos.move(dir[0], dir[1]);
+                    if (neighbor.isValid()
+                            && !closedSet.contains(neighbor)
+                            && !state.isBlocked(currentPos, neighbor)
+                            && (extraWall == null || !extraWall.blocksMove(currentPos, neighbor))) {
 
-                if (state.isBlocked(currentPos, neighbor)) continue;
-                if (extraWall != null && extraWall.blocksMove(currentPos, neighbor)) continue;
+                        double tentativeG = currentG + 1.0; // All edges cost 1 in A*
+                        double existingG = gScore.getOrDefault(neighbor, Double.MAX_VALUE);
 
-                double tentativeG = currentG + 1.0; // All edges cost 1 in A*
-                double existingG = gScore.getOrDefault(neighbor, Double.MAX_VALUE);
-
-                if (tentativeG < existingG) {
-                    gScore.put(neighbor, tentativeG);
-                    cameFrom.put(neighbor, currentPos);
-                    double f = tentativeG + heuristic(neighbor, goalRow, state);
-                    openSet.add(new double[]{f, tentativeG, neighbor.getRow(), neighbor.getCol()});
+                        if (tentativeG < existingG) {
+                            gScore.put(neighbor, tentativeG);
+                            cameFrom.put(neighbor, currentPos);
+                            double f = tentativeG + heuristic(neighbor, goalRow, state);
+                            openSet.add(new double[]{f, tentativeG, neighbor.getRow(), neighbor.getCol()});
+                        }
+                    }
                 }
             }
         }
@@ -190,28 +191,29 @@ public class PathFinder {
             double currentDist = current[0];
             Position currentPos = new Position((int) current[1], (int) current[2]);
 
-            if (visited.contains(currentPos)) continue;
-            visited.add(currentPos);
+            if (!visited.contains(currentPos)) {
+                visited.add(currentPos);
 
-            // Reached the goal row - return the weighted distance
-            if (currentPos.getRow() == goalRow) {
-                return currentDist;
-            }
+                // Reached the goal row - return the weighted distance
+                if (currentPos.getRow() == goalRow) {
+                    return currentDist;
+                }
 
-            // Explore neighbors using BoardGraph's weighted edges
-            Map<Position, Double> neighbors = graph.getNeighbors(currentPos);
-            for (Map.Entry<Position, Double> entry : neighbors.entrySet()) {
-                Position neighbor = entry.getKey();
-                double edgeWeight = entry.getValue();
+                // Explore neighbors using BoardGraph's weighted edges
+                Map<Position, Double> neighbors = graph.getNeighbors(currentPos);
+                for (Map.Entry<Position, Double> entry : neighbors.entrySet()) {
+                    Position neighbor = entry.getKey();
+                    double edgeWeight = entry.getValue();
 
-                if (visited.contains(neighbor)) continue;
+                    if (!visited.contains(neighbor)) {
+                        double newDist = currentDist + edgeWeight;
+                        double existingDist = dist.getOrDefault(neighbor, Double.MAX_VALUE);
 
-                double newDist = currentDist + edgeWeight;
-                double existingDist = dist.getOrDefault(neighbor, Double.MAX_VALUE);
-
-                if (newDist < existingDist) {
-                    dist.put(neighbor, newDist);
-                    pq.add(new double[]{newDist, neighbor.getRow(), neighbor.getCol()});
+                        if (newDist < existingDist) {
+                            dist.put(neighbor, newDist);
+                            pq.add(new double[]{newDist, neighbor.getRow(), neighbor.getCol()});
+                        }
+                    }
                 }
             }
         }

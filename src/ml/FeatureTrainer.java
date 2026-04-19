@@ -60,7 +60,8 @@ public class FeatureTrainer {
 
         long startTime = System.currentTimeMillis();
 
-        for (int epoch = 0; epoch < maxEpochs; epoch++) {
+        boolean keepTraining = true;
+        for (int epoch = 0; keepTraining && epoch < maxEpochs; epoch++) {
             // shuffle training data
             for (int i = trainSize - 1; i > 0; i--) {
                 int j = rng.nextInt(i + 1);
@@ -137,7 +138,7 @@ public class FeatureTrainer {
                     }
                     if (noImproveCount >= patience) {
                         System.out.println("  >> early stopping!");
-                        break;
+                        keepTraining = false;
                     }
                 }
             }

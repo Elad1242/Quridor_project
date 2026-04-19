@@ -54,19 +54,20 @@ public final class GreedyPathBot {
             int dist = PathFinder.aStarShortestPath(state, me);
             me.setPosition(original);
 
-            if (dist < 0) continue;                     // unreachable (shouldn't happen)
-            int advance = (p.getRow() - curRow) * forwardDir;  // positive = toward goal
+            if (dist >= 0) {                            // unreachable (shouldn't happen) -> skip
+                int advance = (p.getRow() - curRow) * forwardDir;  // positive = toward goal
 
-            boolean better =
-                    (dist < bestDist)
-                    || (dist == bestDist && advance > bestAdvance)
-                    || (dist == bestDist && advance == bestAdvance && p.getCol() < bestCol);
+                boolean better =
+                        (dist < bestDist)
+                        || (dist == bestDist && advance > bestAdvance)
+                        || (dist == bestDist && advance == bestAdvance && p.getCol() < bestCol);
 
-            if (better) {
-                best = p;
-                bestDist = dist;
-                bestAdvance = advance;
-                bestCol = p.getCol();
+                if (better) {
+                    best = p;
+                    bestDist = dist;
+                    bestAdvance = advance;
+                    bestCol = p.getCol();
+                }
             }
         }
         return best;

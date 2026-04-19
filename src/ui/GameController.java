@@ -1263,7 +1263,7 @@ public class GameController {
                 Player bot = gameState.getCurrentPlayer();
                 bot.setPosition(action.moveTarget);
                 statusLabel.setText(botName + " moved to " + action.moveTarget
-                        + " (CNN: " + String.format("%.3f", action.score) + ")");
+                        + " (NN: " + String.format("%.3f", action.score) + ")");
                 statusLabel.setTextFill(Color.web("#e74c3c"));
 
                 gameState.checkWinCondition();
@@ -1283,7 +1283,7 @@ public class GameController {
                     String orientStr = wall.isHorizontal() ? "horizontal" : "vertical";
                     statusLabel.setText(botName + " placed " + orientStr + " wall at ("
                             + wall.getRow() + "," + wall.getCol() + ")"
-                            + " (CNN: " + String.format("%.3f", action.score) + ")");
+                            + " (NN: " + String.format("%.3f", action.score) + ")");
                     statusLabel.setTextFill(Color.web("#e74c3c"));
                 } else {
                     statusLabel.setText(botName + " wall was invalid — turn skipped");

@@ -70,6 +70,7 @@ public class BotStressTest {
             int playerIdx = state.getCurrentPlayerIndex();
 
             try {
+                boolean skipAfter = false;
                 if (playerIdx == 0) {
                     // Human turn
                     boolean placed = false;
@@ -92,7 +93,7 @@ public class BotStressTest {
                             current.setPosition(bestMove);
                         } else {
                             state.nextTurn();
-                            continue;
+                            skipAfter = true;
                         }
                     }
                 } else {
@@ -107,35 +108,37 @@ public class BotStressTest {
 
                     if (action == null) {
                         state.nextTurn();
-                        continue;
-                    }
-
-                    if (action.type == BotBrain.BotAction.Type.MOVE) {
-                        List<Position> validMoves = MoveValidator.getValidMoves(state, current);
-                        if (!validMoves.contains(action.moveTarget)) {
-                            System.out.println("  ERROR: Bot made ILLEGAL MOVE to " + action.moveTarget + " on turn " + turn);
-                            System.out.println("  Valid moves: " + validMoves);
-                            return "ERROR";
-                        }
-                        current.setPosition(action.moveTarget);
+                        skipAfter = true;
                     } else {
-                        if (!WallValidator.isValidWallPlacement(state, action.wallToPlace)) {
-                            System.out.println("  ERROR: Bot placed ILLEGAL WALL " + action.wallToPlace + " on turn " + turn);
-                            return "ERROR";
+                        if (action.type == BotBrain.BotAction.Type.MOVE) {
+                            List<Position> validMoves = MoveValidator.getValidMoves(state, current);
+                            if (!validMoves.contains(action.moveTarget)) {
+                                System.out.println("  ERROR: Bot made ILLEGAL MOVE to " + action.moveTarget + " on turn " + turn);
+                                System.out.println("  Valid moves: " + validMoves);
+                                return "ERROR";
+                            }
+                            current.setPosition(action.moveTarget);
+                        } else {
+                            if (!WallValidator.isValidWallPlacement(state, action.wallToPlace)) {
+                                System.out.println("  ERROR: Bot placed ILLEGAL WALL " + action.wallToPlace + " on turn " + turn);
+                                return "ERROR";
+                            }
+                            state.addWall(action.wallToPlace);
                         }
-                        state.addWall(action.wallToPlace);
                     }
                 }
 
-                state.checkWinCondition();
-                if (state.isGameOver()) {
-                    String winner = state.getWinner().getName();
-                    System.out.println("  Game " + gameNum + ": " + winner + " wins in " + turn + " turns"
-                        + " (walls on board: " + state.getWalls().size() + ")");
-                    return winner.equals("Bot") ? "BOT" : "HUMAN";
-                }
+                if (!skipAfter) {
+                    state.checkWinCondition();
+                    if (state.isGameOver()) {
+                        String winner = state.getWinner().getName();
+                        System.out.println("  Game " + gameNum + ": " + winner + " wins in " + turn + " turns"
+                            + " (walls on board: " + state.getWalls().size() + ")");
+                        return winner.equals("Bot") ? "BOT" : "HUMAN";
+                    }
 
-                state.nextTurn();
+                    state.nextTurn();
+                }
 
             } catch (Exception e) {
                 System.out.println("  CRASH on turn " + turn + ": " + e.getMessage());
@@ -221,22 +224,23 @@ public class BotStressTest {
             for (int c = 0; c < 8; c++) {
                 for (Wall.Orientation orient : Wall.Orientation.values()) {
                     Wall candidate = new Wall(r, c, orient);
-                    if (!WallValidator.isValidWallPlacement(state, candidate)) continue;
+                    if (WallValidator.isValidWallPlacement(state, candidate)) {
+                        int botPathAfter = PathFinder.aStarWithWall(state, bot, candidate);
+                        if (botPathAfter >= 0) {
+                            int damage = botPathAfter - botPathBefore;
 
-                    int botPathAfter = PathFinder.aStarWithWall(state, bot, candidate);
-                    if (botPathAfter < 0) continue;
+                            // Also check self-harm
+                            int humanPathAfter = PathFinder.aStarWithWall(state, human, candidate);
+                            if (humanPathAfter >= 0) {
+                                int selfHarm = humanPathAfter - humanPathBefore;
 
-                    int damage = botPathAfter - botPathBefore;
-
-                    // Also check self-harm
-                    int humanPathAfter = PathFinder.aStarWithWall(state, human, candidate);
-                    if (humanPathAfter < 0) continue;
-                    int selfHarm = humanPathAfter - humanPathBefore;
-
-                    // Only place if net positive
-                    if (damage - selfHarm > bestDamage) {
-                        bestDamage = damage - selfHarm;
-                        bestWall = candidate;
+                                // Only place if net positive
+                                if (damage - selfHarm > bestDamage) {
+                                    bestDamage = damage - selfHarm;
+                                    bestWall = candidate;
+                                }
+                            }
+                        }
                     }
                 }
             }

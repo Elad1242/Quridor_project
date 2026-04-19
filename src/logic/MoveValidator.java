@@ -30,13 +30,12 @@ public class MoveValidator {
             int dCol = directions[i][1];
             Position next = current.move(dRow, dCol);
 
-            if (!next.isValid()) continue;
-            if (state.isBlocked(current, next)) continue;
-
-            if (next.equals(opponent)) {
-                handleJumpMoves(state, validMoves, current, next, dRow, dCol);
-            } else {
-                validMoves.add(next);
+            if (next.isValid() && !state.isBlocked(current, next)) {
+                if (next.equals(opponent)) {
+                    handleJumpMoves(state, validMoves, current, next, dRow, dCol);
+                } else {
+                    validMoves.add(next);
+                }
             }
         }
 

@@ -70,7 +70,8 @@ public class BotSmartTest {
             String winner = "DRAW";
             int finalTurn = maxTurns;
 
-            for (int turn = 1; turn <= maxTurns; turn++) {
+            boolean gameRunning = true;
+            for (int turn = 1; gameRunning && turn <= maxTurns; turn++) {
                 Player current = state.getCurrentPlayer();
                 int playerIdx = state.getCurrentPlayerIndex();
 
@@ -80,27 +81,26 @@ public class BotSmartTest {
 
                     if (action == null) {
                         state.nextTurn();
-                        continue;
-                    }
-
-                    if (action.type == BotBrain.BotAction.Type.MOVE) {
-                        current.setPosition(action.moveTarget);
                     } else {
-                        state.addWall(action.wallToPlace);
-                    }
+                        if (action.type == BotBrain.BotAction.Type.MOVE) {
+                            current.setPosition(action.moveTarget);
+                        } else {
+                            state.addWall(action.wallToPlace);
+                        }
 
-                    state.checkWinCondition();
-                    if (state.isGameOver()) {
-                        winner = state.getWinner().getName();
-                        finalTurn = turn;
-                        break;
+                        state.checkWinCondition();
+                        if (state.isGameOver()) {
+                            winner = state.getWinner().getName();
+                            finalTurn = turn;
+                            gameRunning = false;
+                        } else {
+                            state.nextTurn();
+                        }
                     }
-
-                    state.nextTurn();
                 } catch (Exception e) {
                     System.out.println("  CRASH game " + game + " turn " + turn + ": " + e.getMessage());
                     winner = "CRASH";
-                    break;
+                    gameRunning = false;
                 }
             }
 
@@ -135,11 +135,13 @@ public class BotSmartTest {
             String winner = "DRAW";
             int finalTurn = maxTurns;
 
-            for (int turn = 1; turn <= maxTurns; turn++) {
+            boolean gameRunning = true;
+            for (int turn = 1; gameRunning && turn <= maxTurns; turn++) {
                 Player current = state.getCurrentPlayer();
                 int playerIdx = state.getCurrentPlayerIndex();
 
                 try {
+                    boolean skipAfter = false;
                     if (playerIdx == 0) {
                         // Aggressive waller: places walls every other turn, targeting bot's path
                         boolean placed = false;
@@ -156,27 +158,30 @@ public class BotSmartTest {
                         BotBrain.BotAction action = brain.computeBestAction(state);
                         if (action == null) {
                             state.nextTurn();
-                            continue;
-                        }
-                        if (action.type == BotBrain.BotAction.Type.MOVE) {
-                            current.setPosition(action.moveTarget);
+                            skipAfter = true;
                         } else {
-                            state.addWall(action.wallToPlace);
+                            if (action.type == BotBrain.BotAction.Type.MOVE) {
+                                current.setPosition(action.moveTarget);
+                            } else {
+                                state.addWall(action.wallToPlace);
+                            }
                         }
                     }
 
-                    state.checkWinCondition();
-                    if (state.isGameOver()) {
-                        winner = state.getWinner().getName();
-                        finalTurn = turn;
-                        break;
+                    if (!skipAfter) {
+                        state.checkWinCondition();
+                        if (state.isGameOver()) {
+                            winner = state.getWinner().getName();
+                            finalTurn = turn;
+                            gameRunning = false;
+                        } else {
+                            state.nextTurn();
+                        }
                     }
-
-                    state.nextTurn();
                 } catch (Exception e) {
                     System.out.println("  CRASH game " + game + " turn " + turn + ": " + e.getMessage());
                     winner = "CRASH";
-                    break;
+                    gameRunning = false;
                 }
             }
 
@@ -293,17 +298,20 @@ public class BotSmartTest {
             String winner = "DRAW";
             int finalTurn = maxTurns;
 
-            for (int turn = 1; turn <= maxTurns; turn++) {
+            boolean gameRunning = true;
+            for (int turn = 1; gameRunning && turn <= maxTurns; turn++) {
                 Player current = state.getCurrentPlayer();
                 int playerIdx = state.getCurrentPlayerIndex();
 
                 try {
+                    boolean skipAfter = false;
                     if (playerIdx == 0) {
                         // Random-path human: sometimes picks A* move, sometimes random valid move
                         // Also places walls randomly sometimes
                         Position move = null;
                         List<Position> validMoves = MoveValidator.getValidMoves(state, current);
 
+                        boolean wallPlacedBranch = false;
                         // 20% chance to place a random valid wall
                         if (rng.nextDouble() < 0.2 && current.hasWalls()) {
                             Wall randomWall = pickRandomWall(state, rng);
@@ -313,48 +321,56 @@ public class BotSmartTest {
                                 if (state.isGameOver()) {
                                     winner = state.getWinner().getName();
                                     finalTurn = turn;
-                                    break;
+                                    gameRunning = false;
+                                } else {
+                                    state.nextTurn();
                                 }
-                                state.nextTurn();
-                                continue;
+                                wallPlacedBranch = true;
+                                skipAfter = true;
                             }
                         }
 
-                        if (rng.nextDouble() < 0.6) {
-                            // 60% A* guided move
-                            move = pickSmartMove(state, current);
-                        } else {
-                            // 40% random valid move
-                            if (!validMoves.isEmpty()) {
-                                move = validMoves.get(rng.nextInt(validMoves.size()));
+                        if (!wallPlacedBranch) {
+                            if (rng.nextDouble() < 0.6) {
+                                // 60% A* guided move
+                                move = pickSmartMove(state, current);
+                            } else {
+                                // 40% random valid move
+                                if (!validMoves.isEmpty()) {
+                                    move = validMoves.get(rng.nextInt(validMoves.size()));
+                                }
                             }
-                        }
 
-                        if (move != null) current.setPosition(move);
+                            if (move != null) current.setPosition(move);
+                        }
                     } else {
                         BotBrain.BotAction action = brain.computeBestAction(state);
                         if (action == null) {
                             state.nextTurn();
-                            continue;
-                        }
-                        if (action.type == BotBrain.BotAction.Type.MOVE) {
-                            current.setPosition(action.moveTarget);
+                            skipAfter = true;
                         } else {
-                            state.addWall(action.wallToPlace);
+                            if (action.type == BotBrain.BotAction.Type.MOVE) {
+                                current.setPosition(action.moveTarget);
+                            } else {
+                                state.addWall(action.wallToPlace);
+                            }
                         }
                     }
 
-                    state.checkWinCondition();
-                    if (state.isGameOver()) {
-                        winner = state.getWinner().getName();
-                        finalTurn = turn;
-                        break;
+                    if (!skipAfter) {
+                        state.checkWinCondition();
+                        if (state.isGameOver()) {
+                            winner = state.getWinner().getName();
+                            finalTurn = turn;
+                            gameRunning = false;
+                        } else {
+                            state.nextTurn();
+                        }
                     }
-                    state.nextTurn();
                 } catch (Exception e) {
                     System.out.println("  CRASH game " + game + " turn " + turn + ": " + e.getMessage());
                     winner = "CRASH";
-                    break;
+                    gameRunning = false;
                 }
             }
 
@@ -387,10 +403,12 @@ public class BotSmartTest {
             String winner = "DRAW";
             int finalTurn = maxTurns;
 
-            for (int turn = 1; turn <= maxTurns; turn++) {
+            boolean gameRunning = true;
+            for (int turn = 1; gameRunning && turn <= maxTurns; turn++) {
                 Player current = state.getCurrentPlayer();
                 int playerIdx = state.getCurrentPlayerIndex();
                 try {
+                    boolean skipAfter = false;
                     if (playerIdx == 0) {
                         boolean placed = false;
                         if (current.hasWalls() && humanWallsPlaced < 8 && turn % 2 == 1) {
@@ -403,19 +421,23 @@ public class BotSmartTest {
                         }
                     } else {
                         BotBrain.BotAction action = brain.computeBestAction(state);
-                        if (action == null) { state.nextTurn(); continue; }
-                        if (action.type == BotBrain.BotAction.Type.MOVE) {
-                            current.setPosition(action.moveTarget);
-                        } else {
-                            state.addWall(action.wallToPlace);
+                        if (action == null) { state.nextTurn(); skipAfter = true; }
+                        else {
+                            if (action.type == BotBrain.BotAction.Type.MOVE) {
+                                current.setPosition(action.moveTarget);
+                            } else {
+                                state.addWall(action.wallToPlace);
+                            }
                         }
                     }
-                    state.checkWinCondition();
-                    if (state.isGameOver()) { winner = state.getWinner().getName(); finalTurn = turn; break; }
-                    state.nextTurn();
+                    if (!skipAfter) {
+                        state.checkWinCondition();
+                        if (state.isGameOver()) { winner = state.getWinner().getName(); finalTurn = turn; gameRunning = false; }
+                        else { state.nextTurn(); }
+                    }
                 } catch (Exception e) {
                     System.out.println("  CRASH game " + game + ": " + e.getMessage());
-                    winner = "CRASH"; break;
+                    winner = "CRASH"; gameRunning = false;
                 }
             }
             if (winner.equals("ExploBot")) botWins++;
@@ -441,26 +463,29 @@ public class BotSmartTest {
             // Track move sequence for fingerprint
             StringBuilder moveSeq = new StringBuilder();
 
-            for (int turn = 1; turn <= maxTurns; turn++) {
+            boolean gameRunning = true;
+            for (int turn = 1; gameRunning && turn <= maxTurns; turn++) {
                 int playerIdx = state.getCurrentPlayerIndex();
                 Player current = state.getCurrentPlayer();
                 try {
                     BotBrain brain = (playerIdx == 0) ? brainA : brainB;
                     BotBrain.BotAction action = brain.computeBestAction(state);
-                    if (action == null) { state.nextTurn(); continue; }
-                    if (action.type == BotBrain.BotAction.Type.MOVE) {
-                        current.setPosition(action.moveTarget);
-                        moveSeq.append("M").append(action.moveTarget).append(";");
-                    } else {
-                        state.addWall(action.wallToPlace);
-                        moveSeq.append("W").append(action.wallToPlace).append(";");
+                    if (action == null) { state.nextTurn(); }
+                    else {
+                        if (action.type == BotBrain.BotAction.Type.MOVE) {
+                            current.setPosition(action.moveTarget);
+                            moveSeq.append("M").append(action.moveTarget).append(";");
+                        } else {
+                            state.addWall(action.wallToPlace);
+                            moveSeq.append("W").append(action.wallToPlace).append(";");
+                        }
+                        state.checkWinCondition();
+                        if (state.isGameOver()) { winner = state.getWinner().getName(); finalTurn = turn; gameRunning = false; }
+                        else { state.nextTurn(); }
                     }
-                    state.checkWinCondition();
-                    if (state.isGameOver()) { winner = state.getWinner().getName(); finalTurn = turn; break; }
-                    state.nextTurn();
                 } catch (Exception e) {
                     System.out.println("  CRASH game " + game + ": " + e.getMessage());
-                    winner = "CRASH"; break;
+                    winner = "CRASH"; gameRunning = false;
                 }
             }
             totalTurns += finalTurn;
@@ -526,21 +551,21 @@ public class BotSmartTest {
             for (int c = 0; c < 8; c++) {
                 for (Wall.Orientation orient : Wall.Orientation.values()) {
                     Wall candidate = new Wall(r, c, orient);
-                    if (!WallValidator.isValidWallPlacement(state, candidate)) continue;
+                    if (WallValidator.isValidWallPlacement(state, candidate)) {
+                        int botPathAfter = PathFinder.aStarWithWall(state, bot, candidate);
+                        if (botPathAfter >= 0) {
+                            int humanPathAfter = PathFinder.aStarWithWall(state, human, candidate);
+                            if (humanPathAfter >= 0) {
+                                int damage = botPathAfter - botPathBefore;
+                                int selfHarm = humanPathAfter - humanPathBefore;
+                                int netDamage = damage - selfHarm;
 
-                    int botPathAfter = PathFinder.aStarWithWall(state, bot, candidate);
-                    if (botPathAfter < 0) continue;
-
-                    int humanPathAfter = PathFinder.aStarWithWall(state, human, candidate);
-                    if (humanPathAfter < 0) continue;
-
-                    int damage = botPathAfter - botPathBefore;
-                    int selfHarm = humanPathAfter - humanPathBefore;
-                    int netDamage = damage - selfHarm;
-
-                    if (netDamage > bestNetDamage) {
-                        bestNetDamage = netDamage;
-                        bestWall = candidate;
+                                if (netDamage > bestNetDamage) {
+                                    bestNetDamage = netDamage;
+                                    bestWall = candidate;
+                                }
+                            }
+                        }
                     }
                 }
             }

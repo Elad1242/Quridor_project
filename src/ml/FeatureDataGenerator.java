@@ -87,7 +87,8 @@ public class FeatureDataGenerator {
         Object opponent = createOpponent(oppType);
 
         int turns = 0;
-        while (!state.isGameOver() && turns < MAX_TURNS) {
+        boolean running = true;
+        while (running && !state.isGameOver() && turns < MAX_TURNS) {
             if (state.getCurrentPlayerIndex() == 0) {
                 // BotBrain's turn - record chosen action + random alternatives
                 try {
@@ -95,42 +96,46 @@ public class FeatureDataGenerator {
                     List<Position> validMoves = MoveValidator.getValidMoves(state, me);
 
                     BotBrain.BotAction chosen = bot.computeBestAction(state);
-                    if (chosen == null) break;
-
-                    // chosen action gets label 0.9
-                    double[] chosenFeatures = computeActionFeatures(state, chosen);
-                    if (chosenFeatures != null) {
-                        allFeatures.add(chosenFeatures);
-                        allLabels.add(0.9);
-                        totalSamples.incrementAndGet();
-                    }
-
-                    // random alternatives get label 0.1
-                    List<Object> alternatives = getAlternativeActions(state, me, chosen, rng);
-                    for (Object alt : alternatives) {
-                        double[] altFeatures = computeAltFeatures(state, alt);
-                        if (altFeatures != null) {
-                            allFeatures.add(altFeatures);
-                            allLabels.add(0.1);
+                    if (chosen == null) {
+                        running = false;
+                    } else {
+                        // chosen action gets label 0.9
+                        double[] chosenFeatures = computeActionFeatures(state, chosen);
+                        if (chosenFeatures != null) {
+                            allFeatures.add(chosenFeatures);
+                            allLabels.add(0.9);
                             totalSamples.incrementAndGet();
                         }
-                    }
 
-                    // apply BotBrain's chosen action
-                    if (chosen.type == BotBrain.BotAction.Type.MOVE) {
-                        state.getCurrentPlayer().setPosition(chosen.moveTarget);
-                    } else {
-                        chosen.wallToPlace.setOwnerIndex(0);
-                        state.addWall(chosen.wallToPlace);
+                        // random alternatives get label 0.1
+                        List<Object> alternatives = getAlternativeActions(state, me, chosen, rng);
+                        for (Object alt : alternatives) {
+                            double[] altFeatures = computeAltFeatures(state, alt);
+                            if (altFeatures != null) {
+                                allFeatures.add(altFeatures);
+                                allLabels.add(0.1);
+                                totalSamples.incrementAndGet();
+                            }
+                        }
+
+                        // apply BotBrain's chosen action
+                        if (chosen.type == BotBrain.BotAction.Type.MOVE) {
+                            state.getCurrentPlayer().setPosition(chosen.moveTarget);
+                        } else {
+                            chosen.wallToPlace.setOwnerIndex(0);
+                            state.addWall(chosen.wallToPlace);
+                        }
                     }
-                } catch (Exception e) { break; }
+                } catch (Exception e) { running = false; }
             } else {
                 applyOpponentAction(state, opponent);
             }
 
-            state.checkWinCondition();
-            if (!state.isGameOver()) state.nextTurn();
-            turns++;
+            if (running) {
+                state.checkWinCondition();
+                if (!state.isGameOver()) state.nextTurn();
+                turns++;
+            }
         }
     }
 
@@ -160,9 +165,9 @@ public class FeatureDataGenerator {
         // add all legal moves (except chosen)
         List<Position> moves = MoveValidator.getValidMoves(state, me);
         for (Position p : moves) {
-            if (chosen.type == BotBrain.BotAction.Type.MOVE && p.equals(chosen.moveTarget))
-                continue;
-            candidates.add(p);
+            if (!(chosen.type == BotBrain.BotAction.Type.MOVE && p.equals(chosen.moveTarget))) {
+                candidates.add(p);
+            }
         }
 
         // add some legal walls (except chosen)
@@ -174,13 +179,19 @@ public class FeatureDataGenerator {
                         Wall.Orientation orient = (o == 0) ?
                                 Wall.Orientation.HORIZONTAL : Wall.Orientation.VERTICAL;
                         Wall w = new Wall(r, c, orient);
-                        if (!WallValidator.isValidWallPlacement(state, w)) continue;
-                        if (chosen.type == BotBrain.BotAction.Type.WALL) {
-                            Wall cw = chosen.wallToPlace;
-                            if (cw.getPosition().getRow() == r && cw.getPosition().getCol() == c
-                                    && cw.getOrientation() == orient) continue;
+                        if (WallValidator.isValidWallPlacement(state, w)) {
+                            boolean isChosen = false;
+                            if (chosen.type == BotBrain.BotAction.Type.WALL) {
+                                Wall cw = chosen.wallToPlace;
+                                if (cw.getPosition().getRow() == r && cw.getPosition().getCol() == c
+                                        && cw.getOrientation() == orient) {
+                                    isChosen = true;
+                                }
+                            }
+                            if (!isChosen) {
+                                walls.add(w);
+                            }
                         }
-                        walls.add(w);
                     }
                 }
             }

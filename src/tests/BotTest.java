@@ -111,7 +111,8 @@ public class BotTest {
         GameState gameSim = new GameState("Human", "Bot");
         BotBrain brain = new BotBrain();  // Fresh brain for simulation
 
-        for (int turn = 1; turn <= 30; turn++) {
+        boolean gameRunning = true;
+        for (int turn = 1; gameRunning && turn <= 30; turn++) {
             Player current = gameSim.getCurrentPlayer();
             int playerIdx = gameSim.getCurrentPlayerIndex();
 
@@ -147,9 +148,10 @@ public class BotTest {
             gameSim.checkWinCondition();
             if (gameSim.isGameOver()) {
                 System.out.println("GAME OVER! Winner: " + gameSim.getWinner().getName());
-                break;
+                gameRunning = false;
+            } else {
+                gameSim.nextTurn();
             }
-            gameSim.nextTurn();
         }
 
         System.out.println("\nFinal state:");

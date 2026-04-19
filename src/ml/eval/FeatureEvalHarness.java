@@ -45,24 +45,33 @@ public class FeatureEvalHarness {
             brain.setSilent(true);
 
             int turns = 0;
-            while (!state.isGameOver() && turns < MAX_TURNS) {
+            boolean running = true;
+            while (running && !state.isGameOver() && turns < MAX_TURNS) {
                 if (state.getCurrentPlayerIndex() == mlIdx) {
                     FeatureBot.Action a = mlBot.computeBestAction(state);
-                    if (a == null) break;
-                    a.applyTo(state);
+                    if (a == null) {
+                        running = false;
+                    } else {
+                        a.applyTo(state);
+                    }
                 } else {
                     BotBrain.BotAction a = brain.computeBestAction(state);
-                    if (a == null) break;
-                    if (a.type == BotBrain.BotAction.Type.MOVE)
-                        state.getCurrentPlayer().setPosition(a.moveTarget);
-                    else {
-                        a.wallToPlace.setOwnerIndex(state.getCurrentPlayerIndex());
-                        state.addWall(a.wallToPlace);
+                    if (a == null) {
+                        running = false;
+                    } else {
+                        if (a.type == BotBrain.BotAction.Type.MOVE)
+                            state.getCurrentPlayer().setPosition(a.moveTarget);
+                        else {
+                            a.wallToPlace.setOwnerIndex(state.getCurrentPlayerIndex());
+                            state.addWall(a.wallToPlace);
+                        }
                     }
                 }
-                state.checkWinCondition();
-                if (!state.isGameOver()) state.nextTurn();
-                turns++;
+                if (running) {
+                    state.checkWinCondition();
+                    if (!state.isGameOver()) state.nextTurn();
+                    turns++;
+                }
             }
 
             if (state.isGameOver() && state.getWinner() != null) {

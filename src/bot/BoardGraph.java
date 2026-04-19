@@ -45,14 +45,12 @@ public class BoardGraph {
 
                 for (int[] dir : DIRECTIONS) {
                     Position to = from.move(dir[0], dir[1]);
-                    if (!to.isValid()) continue;
+                    if (to.isValid() && !state.isBlocked(from, to)) {
+                        // weight based on how dangerous this path is
+                        double weight = calculateEdgeWeight(from, to, opponentWalls, opponentPos);
 
-                    if (state.isBlocked(from, to)) continue;
-
-                    // weight based on how dangerous this path is
-                    double weight = calculateEdgeWeight(from, to, opponentWalls, opponentPos);
-
-                    adjacency.computeIfAbsent(from, k -> new HashMap<>()).put(to, weight);
+                        adjacency.computeIfAbsent(from, k -> new HashMap<>()).put(to, weight);
+                    }
                 }
             }
         }
@@ -126,10 +124,10 @@ public class BoardGraph {
                 Position from = new Position(row, col);
                 for (int[] dir : DIRECTIONS) {
                     Position to = from.move(dir[0], dir[1]);
-                    if (!to.isValid()) continue;
-                    if (state.isBlocked(from, to)) continue;
-                    double weight = calculateEdgeWeight(from, to, opponentWalls, opponentPos);
-                    adjacency.computeIfAbsent(from, k -> new HashMap<>()).put(to, weight);
+                    if (to.isValid() && !state.isBlocked(from, to)) {
+                        double weight = calculateEdgeWeight(from, to, opponentWalls, opponentPos);
+                        adjacency.computeIfAbsent(from, k -> new HashMap<>()).put(to, weight);
+                    }
                 }
             }
         }
