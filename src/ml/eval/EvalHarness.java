@@ -172,7 +172,7 @@ public class EvalHarness {
                     return new Participant() {
                         BotBrain brain = freshBrain();
                         private BotBrain freshBrain() {
-                            BotBrain b = new BotBrain(0.0, 6);
+                            BotBrain b = new BotBrain(6);
                             b.setSilent(true);
                             return b;
                         }

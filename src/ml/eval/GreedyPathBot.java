@@ -18,17 +18,11 @@ import java.util.List;
  *     minimises the A* distance to the goal (tie-break: larger row advancement
  *     toward the goal, then lowest-col for full determinism).
  *
- * Strength ordering (empirical):
+ * Strength ordering:
  *     UniformRandom < ForwardRandom < SemiSmart < GreedyPathBot < BotBrain
  *
- * Purpose:
- *   Provides a clean, deterministic intermediate rung between RandomBot and
- *   BotBrain. Used by the skill-gradient ablation (WeakTeacherExperiment) and
- *   the round-robin Tournament to show that FeatureBot DOES learn — it beats
- *   weak opponents convincingly; it only fails to exceed its teacher BotBrain.
- *
- *   This is the empirical evidence for the "imitation ceiling = teacher
- *   quality" hypothesis from PROJECT_JOURNEY.md.
+ * Used as a baseline in evaluation harness to verify that FeatureBot beats
+ * weak opponents convincingly.
  */
 public final class GreedyPathBot {
 

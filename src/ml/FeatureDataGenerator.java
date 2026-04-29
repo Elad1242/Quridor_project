@@ -82,7 +82,7 @@ public class FeatureDataGenerator {
                                         List<double[]> allFeatures, List<Double> allLabels,
                                         AtomicInteger totalSamples) {
         GameState state = new GameState();
-        BotBrain bot = new BotBrain(0, 3);
+        BotBrain bot = new BotBrain(3);
         bot.setSilent(true);
         Object opponent = createOpponent(oppType);
 
@@ -220,7 +220,7 @@ public class FeatureDataGenerator {
             case 2: return new RandomBot.RandomWaller(System.nanoTime());
             case 3: return new RandomBot.SemiSmart(System.nanoTime());
             case 4:
-                BotBrain b = new BotBrain(0, 5);
+                BotBrain b = new BotBrain(5);
                 b.setSilent(true);
                 return b;
             default: return new RandomBot.UniformRandom(System.nanoTime());

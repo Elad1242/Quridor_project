@@ -23,7 +23,6 @@ public class BotBrain {
     private int consecutiveWalls = 0;
     private int cumulativeSelfHarm = 0;
 
-    private final double explorationNoise;
     private final int openingRandomMoves;
     private final Random rng;
     private int turnCount = 0;
@@ -31,7 +30,7 @@ public class BotBrain {
 
     /** Default constructor - no randomness. */
     public BotBrain() {
-        this(0.0, 0);
+        this(0);
     }
 
     /** Turn off debug prints for batch runs. */
@@ -40,12 +39,10 @@ public class BotBrain {
     }
 
     /**
-     * Constructor with exploration params for bot vs bot games.
-     * @param explorationNoise unused legacy param, just pass 0.0
-     * @param openingRandomMoves how many random moves at the start (3-4 is good)
+     * Constructor with random opening moves for bot vs bot games.
+     * @param openingRandomMoves how many random moves at the start (3-6 is good)
      */
-    public BotBrain(double explorationNoise, int openingRandomMoves) {
-        this.explorationNoise = explorationNoise;
+    public BotBrain(int openingRandomMoves) {
         this.openingRandomMoves = openingRandomMoves;
         this.rng = new Random();
     }
@@ -421,120 +418,4 @@ public class BotBrain {
         return null;
     }
 
-    /** 2-ply lookahead - simulates opponent's best response. */
-    private double evaluateWithLookahead(GameState state, Position move, int depth) {
-        if (depth <= 0) return 0;
-
-        GameState sim = state.deepCopy();
-        Player simBot = sim.getCurrentPlayer();
-        Player simOpp = sim.getOtherPlayer();
-
-        // apply our move
-        simBot.setPosition(move);
-        sim.checkWinCondition();
-        if (sim.isGameOver()) {
-            return sim.getWinner() == simBot ? 1000.0 : -1000.0;
-        }
-
-        sim.nextTurn();
-
-        // check opponent's best response
-        int botDistAfter = PathFinder.aStarShortestPath(sim, simBot);
-        int oppDistBefore = PathFinder.aStarShortestPath(sim, simOpp);
-
-        // simulate opponent's best move
-        java.util.List<Position> oppMoves = MoveValidator.getValidMoves(sim, simOpp);
-        int bestOppDist = oppDistBefore;
-        Position bestOppMove = null;
-
-        for (Position oppMove : oppMoves) {
-            Position origPos = simOpp.getPosition();
-            simOpp.setPosition(oppMove);
-            int newOppDist = PathFinder.aStarShortestPath(sim, simOpp);
-            simOpp.setPosition(origPos);
-
-            if (newOppDist >= 0 && newOppDist < bestOppDist) {
-                bestOppDist = newOppDist;
-                bestOppMove = oppMove;
-            }
-        }
-
-        // positive = we're ahead, negative = behind
-        double raceScore = (bestOppDist - botDistAfter) * 5.0;
-
-        // opponent about to win is really bad
-        if (bestOppDist <= 1) {
-            raceScore -= 50.0;
-        }
-
-        return raceScore;
-    }
-
-    /** Evaluates a wall by simulating opponent's response. */
-    private double evaluateWallWithLookahead(GameState state, Wall wall) {
-        GameState sim = state.deepCopy();
-        Player simBot = sim.getCurrentPlayer();
-        Player simOpp = sim.getOtherPlayer();
-
-        // place the wall
-        wall.setOwnerIndex(sim.getCurrentPlayerIndex());
-        sim.addWall(wall);
-
-        int botDistAfter = PathFinder.aStarShortestPath(sim, simBot);
-        int oppDistAfter = PathFinder.aStarShortestPath(sim, simOpp);
-
-        if (botDistAfter < 0 || oppDistAfter < 0) return -1000.0;
-
-        // simulate opponent's turn
-        sim.nextTurn();
-
-        // find opponent's best move response
-        java.util.List<Position> oppMoves = MoveValidator.getValidMoves(sim, simOpp);
-        int bestOppDistAfterMove = oppDistAfter;
-
-        for (Position oppMove : oppMoves) {
-            Position origPos = simOpp.getPosition();
-            simOpp.setPosition(oppMove);
-            int newDist = PathFinder.aStarShortestPath(sim, simOpp);
-            simOpp.setPosition(origPos);
-
-            if (newDist >= 0 && newDist < bestOppDistAfterMove) {
-                bestOppDistAfterMove = newDist;
-            }
-        }
-
-        // score = race advantage after wall + opponent's response
-        return (bestOppDistAfterMove - botDistAfter) * 3.0;
-    }
-
-    /** Gives a score for how good this position is, normalized to [0, 1]. */
-    public double evaluatePosition(GameState state) {
-        Player bot = state.getCurrentPlayer();
-        Player opponent = state.getOtherPlayer();
-
-        int botDist = logic.PathFinder.aStarShortestPath(state, bot);
-        int oppDist = logic.PathFinder.aStarShortestPath(state, opponent);
-        if (botDist < 0) botDist = 20;
-        if (oppDist < 0) oppDist = 20;
-
-        if (botDist <= 1) return 0.99;  // instant win
-        if (oppDist <= 1) return 0.05; // opponent about to win
-
-        int raceGap = oppDist - botDist;
-
-        // get best move score
-        double moveScore = 0;
-        try {
-            BoardGraph graph = new BoardGraph();
-            graph.buildFromState(state, opponent.getPosition());
-            MoveEvaluator.ScoredMove bestMove = MoveEvaluator.findBestMove(state, graph);
-            if (bestMove != null) moveScore = bestMove.score;
-        } catch (Exception e) { moveScore = 30; }
-
-        // combine action quality + race advantage
-        double rawScore = moveScore + raceGap * 10.0;
-
-        // sigmoid to normalize
-        return 1.0 / (1.0 + Math.exp(-rawScore / 30.0));
-    }
 }

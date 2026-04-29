@@ -99,20 +99,20 @@ public class GameController {
         // Initialize bots if AI-controlled
         if (player1IsBot && player2IsBot) {
             if (player1IsMLBot) {
-                // MLBot vs BotBrain mode — 6 random opens for variety across games
+                // MLBot vs BotBrain mode - 6 random opens for variety across games
                 try {
                     mlBot = new MLBot("models", "best-model");
                 } catch (Exception ex) {
                     System.err.println("Failed to load MLBot: " + ex.getMessage());
                     mlBot = null;
                 }
-                botBrain = new BotBrain(0.0, 6);
+                botBrain = new BotBrain(6);
                 botBrain.setSilent(true);
                 botBrain1 = null;
             } else {
                 // Bot vs Bot: 6 random opening moves for variety
-                botBrain  = new BotBrain(0.0, 6); // Bot B
-                botBrain1 = new BotBrain(0.0, 6); // Bot A
+                botBrain  = new BotBrain(6); // Bot B
+                botBrain1 = new BotBrain(6); // Bot A
                 botBrain.setSilent(true);
                 botBrain1.setSilent(true);
             }
@@ -329,7 +329,7 @@ public class GameController {
             }
         });
 
-        // Human vs MLBot mode — play against the pure-Java NN
+        // Human vs MLBot mode - play against the pure-Java NN
         humanVsMLBotCheckbox.setOnAction(e -> {
             if (humanVsMLBotCheckbox.isSelected()) {
                 botCheckbox.setSelected(false);
@@ -978,13 +978,13 @@ public class GameController {
                         System.err.println("Failed to load MLBot: " + ex.getMessage());
                         mlBot = null;
                     }
-                    botBrain = new BotBrain(0.0, 6);
+                    botBrain = new BotBrain(6);
                     botBrain.setSilent(true);
                     botBrain1 = null;
                 } else {
                     // Bot vs Bot: random openings for varied games
-                    botBrain  = new BotBrain(0.0, 6);
-                    botBrain1 = new BotBrain(0.0, 6);
+                    botBrain  = new BotBrain(6);
+                    botBrain1 = new BotBrain(6);
                     botBrain.setSilent(true);
                     botBrain1.setSilent(true);
                     mlBot = null;
@@ -1064,14 +1064,14 @@ public class GameController {
         root.setBottom(bottomPanel);
     }
 
-    // ==================== BOT VS BOT CONTROLS ====================
+    // Bot vs bot controls
 
     private void toggleBotVsBotPause() {
         botVsBotPaused = !botVsBotPaused;
         if (pauseButton != null) {
             if (botVsBotPaused) {
                 pauseButton.setText("▶ Play");
-                statusLabel.setText("⏸ Paused — click Play to continue");
+                statusLabel.setText("⏸ Paused - click Play to continue");
                 statusLabel.setTextFill(Color.web("#f39c12"));
             } else {
                 pauseButton.setText("⏸ Pause");
@@ -1089,7 +1089,7 @@ public class GameController {
         }
     }
 
-    // ==================== BOT INTEGRATION ====================
+    // Bot integration
 
     /**
      * Checks if the current turn belongs to the bot and triggers its move.
@@ -1186,7 +1186,7 @@ public class GameController {
         String botName = gameState.getCurrentPlayer().getName();
 
         if (action == null) {
-            statusLabel.setText(botName + " couldn't decide — turn skipped");
+            statusLabel.setText(botName + " couldn't decide, turn skipped");
             gameState.nextTurn();
             botThinking = false;
             boardView.update();
@@ -1221,7 +1221,7 @@ public class GameController {
                                    + wall.getRow() + "," + wall.getCol() + ")");
                 statusLabel.setTextFill(Color.web("#e67e22"));
             } else {
-                statusLabel.setText(botName + " wall was invalid — turn skipped");
+                statusLabel.setText(botName + " wall was invalid, turn skipped");
             }
         }
 
@@ -1235,7 +1235,7 @@ public class GameController {
         startTimer();
         triggerBotTurnIfNeeded(); // Chain to next bot in Bot vs Bot
         } catch (Exception ex) {
-            System.err.println("[BOT ACTION ERROR] " + ex.getClass().getName() + ": " + ex.getMessage());
+            System.err.println("Bot action error: " + ex.getClass().getName() + ": " + ex.getMessage());
             ex.printStackTrace();
             botThinking = false;
         }
@@ -1249,7 +1249,7 @@ public class GameController {
             String botName = gameState.getCurrentPlayer().getName();
 
             if (action == null) {
-                statusLabel.setText(botName + " couldn't decide — turn skipped");
+                statusLabel.setText(botName + " couldn't decide, turn skipped");
                 gameState.nextTurn();
                 botThinking = false;
                 boardView.update();
@@ -1286,7 +1286,7 @@ public class GameController {
                             + " (NN: " + String.format("%.3f", action.score) + ")");
                     statusLabel.setTextFill(Color.web("#e74c3c"));
                 } else {
-                    statusLabel.setText(botName + " wall was invalid — turn skipped");
+                    statusLabel.setText(botName + " wall was invalid, turn skipped");
                 }
             }
 
