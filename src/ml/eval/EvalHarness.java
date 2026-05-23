@@ -1,66 +1,48 @@
+// v2.0 — refactored and cleaned, May 2026
 package ml.eval;
 import ml.*;
 
 import bot.BotBrain;
 import bot.WallEvaluator;
 import model.GameState;
-import model.Player;
 import model.Position;
 import model.Wall;
 
 /**
- * Rigorous evaluation harness for head-to-head bot matchups.
+ * Rigorous head-to-head evaluation harness.
  *
- * Improvements over the original FeatureEvalHarness:
- *   1. P1/P2 breakdown — the "fake 50%" trap from the journey is caught here.
- *      Reports wins as Player 1 AND as Player 2 separately, so a bot that only
- *      wins via the first-move tempo advantage is exposed.
- *   2. Wilson 95% confidence intervals — every reported rate has a CI so the
- *      reader can judge statistical significance (a 52% win rate over 500 games
- *      is NOT significantly better than 50%).
- *   3. Uniform Participant adapter — BotBrain, FeatureBot, GreedyPathBot and
- *      any RandomBot subclass are all driven through a single interface, so
- *      arbitrary matchups are a single line to set up.
- *   4. Draw / truncation tracking — games that hit MAX_TURNS without a winner
- *      are counted separately and excluded from the win-rate denominator.
- *   5. Clean tabular output ready to drop into RESULTS.md.
+ * Features:
+ *   - P1/P2 breakdown: catches the "fake 50%" trap (wins all P1, loses all P2).
+ *   - Wilson 95% confidence intervals on every rate.
+ *   - Uniform Participant adapter for BotBrain, FeatureBot, GreedyPathBot, RandomBot.
+ *   - Draw/truncation tracking: games hitting MAX_TURNS are excluded from the denominator.
  *
  * Usage:
  *   java ml.EvalHarness [botA] [botB] [numGames] [modelPath]
  *
- *   botA / botB ∈ {featurebot, botbrain, greedy, semismart, forwardrandom,
- *                  uniformrandom}
- *   numGames    default 500
- *   modelPath   default feature_model.bin (only used if a bot is "featurebot")
- *
- * Example:
- *   java ml.EvalHarness featurebot botbrain 500
- *   java ml.EvalHarness featurebot greedy   500
+ *   botA/botB ∈ {featurebot, botbrain, botbrain6, greedy, semismart, forwardrandom, uniformrandom}
+ *   numGames  default 500
+ *   modelPath default feature_model.bin
  */
 public class EvalHarness {
 
     private static final int MAX_TURNS = 200;
-    private static final double Z_95 = 1.959963984540054; // ≈ 1.96
-
-    // ---------------------------------------------------------------- main ---
+    private static final double Z_95 = 1.959963984540054;
 
     public static void main(String[] args) throws Exception {
-        String botAName = (args.length > 0) ? args[0].toLowerCase() : "featurebot";
-        String botBName = (args.length > 1) ? args[1].toLowerCase() : "botbrain";
-        int numGames    = (args.length > 2) ? Integer.parseInt(args[2]) : 500;
+        String botAName  = (args.length > 0) ? args[0].toLowerCase() : "featurebot";
+        String botBName  = (args.length > 1) ? args[1].toLowerCase() : "botbrain";
+        int numGames     = (args.length > 2) ? Integer.parseInt(args[2]) : 500;
         String modelPath = (args.length > 3) ? args[3] : "feature_model.bin";
 
         WallEvaluator.silent = true;
-        System.out.printf("%n=== Head-to-head: %s vs %s (%d games) ===%n",
-                botAName, botBName, numGames);
+        System.out.printf("%n=== Head-to-head: %s vs %s (%d games) ===%n", botAName, botBName, numGames);
 
         Result r = run(botAName, botBName, numGames, modelPath);
         r.printReport(botAName, botBName);
     }
 
-    // --------------------------------------------------------------- engine ---
-
-    /** Runs numGames between botA and botB, alternating who starts as Player 1. */
+    // alternates who starts as P1 to avoid first-move bias
     public static Result run(String botAName, String botBName, int numGames, String modelPath)
             throws Exception {
         Participant pA = Participant.create(botAName, modelPath);
@@ -70,7 +52,7 @@ public class EvalHarness {
         long start = System.currentTimeMillis();
 
         for (int g = 0; g < numGames; g++) {
-            boolean aIsP1 = (g % 2 == 0);
+            boolean aIsP1  = (g % 2 == 0);
             Participant p1 = aIsP1 ? pA : pB;
             Participant p2 = aIsP1 ? pB : pA;
 
@@ -78,24 +60,25 @@ public class EvalHarness {
 
             if (o == Outcome.DRAW) {
                 r.draws++;
+                continue;
+            }
+
+            r.played++;
+            boolean aWon = (o == Outcome.P1_WIN) == aIsP1;
+
+            if (aIsP1) {
+                r.aAsP1Played++;
+                if (aWon) { r.aWins++; r.aAsP1Wins++; }
+                else      { r.bWins++; }
             } else {
-                r.played++;
-                boolean aWon = (o == Outcome.P1_WIN) == aIsP1;
-                if (aIsP1) {
-                    r.aAsP1Played++;
-                    if (aWon) { r.aWins++; r.aAsP1Wins++; }
-                    else      { r.bWins++; }
-                } else {
-                    r.aAsP2Played++;
-                    if (aWon) { r.aWins++; r.aAsP2Wins++; }
-                    else      { r.bWins++; }
-                }
+                r.aAsP2Played++;
+                if (aWon) { r.aWins++; r.aAsP2Wins++; }
+                else      { r.bWins++; }
             }
 
             if ((g + 1) % 50 == 0) {
                 double winPct = r.played > 0 ? 100.0 * r.aWins / r.played : 0;
-                System.out.printf("  %d/%d — %s at %.1f%%%n",
-                        g + 1, numGames, botAName, winPct);
+                System.out.printf("  %d/%d — %s at %.1f%%%n", g + 1, numGames, botAName, winPct);
             }
         }
 
@@ -114,7 +97,7 @@ public class EvalHarness {
         while (!state.isGameOver() && turns < MAX_TURNS) {
             Participant current = (state.getCurrentPlayerIndex() == 0) ? p1 : p2;
             boolean ok = current.playOneTurn(state);
-            if (!ok) return Outcome.DRAW; // pathological: no legal action produced
+            if (!ok) return Outcome.DRAW;
             state.checkWinCondition();
             if (!state.isGameOver()) state.nextTurn();
             turns++;
@@ -124,14 +107,8 @@ public class EvalHarness {
         return (state.getWinner() == state.getPlayer(0)) ? Outcome.P1_WIN : Outcome.P2_WIN;
     }
 
-    // ------------------------------------------------------- Participant -----
-    /**
-     * Uniform adapter for any bot type. Each implementation knows how to
-     * compute + apply its move on the current GameState. Kept in-file to
-     * avoid touching BotBrain / FeatureBot / RandomBot signatures.
-     */
+    // uniform adapter — each implementation knows how to compute and apply its move
     static abstract class Participant {
-        /** Plays the current player's turn. Returns false if no action possible. */
         abstract boolean playOneTurn(GameState state);
         void reset() { /* stateless by default */ }
 
@@ -161,14 +138,7 @@ public class EvalHarness {
                     };
                 }
                 case "botbrain6": {
-                    // BotBrain with 6 random opening moves — same as the GUI uses.
-                    // A fresh instance is created per game in EvalHarness.run (one
-                    // Participant is reused across games, so this matters: the
-                    // turnCount inside BotBrain persists across games, which means
-                    // after the first game the random-opening phase has already
-                    // ended. We therefore create a FRESH BotBrain per turn call
-                    // with 6 random openings — the state resets between games
-                    // because Participant.reset() is called by the engine).
+                    // fresh BotBrain per game so the random-opening counter resets
                     return new Participant() {
                         BotBrain brain = freshBrain();
                         private BotBrain freshBrain() {
@@ -233,17 +203,15 @@ public class EvalHarness {
         }
     }
 
-    // -------------------------------------------------------------- Result ---
-
     public static class Result {
         public int aWins = 0, bWins = 0, played = 0, draws = 0;
         public int aAsP1Wins = 0, aAsP1Played = 0;
         public int aAsP2Wins = 0, aAsP2Played = 0;
         public long elapsedSec = 0;
 
-        public double rate()     { return played == 0     ? 0 : (double) aWins     / played; }
-        public double rateP1()   { return aAsP1Played==0  ? 0 : (double) aAsP1Wins / aAsP1Played; }
-        public double rateP2()   { return aAsP2Played==0  ? 0 : (double) aAsP2Wins / aAsP2Played; }
+        public double rate()   { return played == 0       ? 0 : (double) aWins     / played; }
+        public double rateP1() { return aAsP1Played == 0  ? 0 : (double) aAsP1Wins / aAsP1Played; }
+        public double rateP2() { return aAsP2Played == 0  ? 0 : (double) aAsP2Wins / aAsP2Played; }
 
         public void printReport(String nameA, String nameB) {
             System.out.printf("%n------- %s vs %s -------%n", nameA, nameB);
@@ -259,10 +227,11 @@ public class EvalHarness {
             System.out.println(interpret(nameA, nameB));
         }
 
-        /** Detects the "fake 50%" pattern (wins all P1, loses all P2). */
+        // detects the "fake 50%" pattern: wins all P1, loses all P2
         private String interpret(String nameA, String nameB) {
             if (played == 0) return "  [no decisive games]";
             double p1 = rateP1(), p2 = rateP2();
+
             if (p1 >= 0.95 && p2 <= 0.05) {
                 return "  [!] FAKE-50% DETECTED: " + nameA + " wins as P1, loses as P2."
                         + "\n      This is the first-move tempo advantage, NOT learning."
@@ -270,8 +239,7 @@ public class EvalHarness {
             }
             if (p1 <= 0.05 && p2 >= 0.95) {
                 return "  [!] FAKE-50% DETECTED (mirrored): " + nameA + " wins as P2, loses as P1."
-                        + "\n      " + nameB + " holds the tempo advantage; " + nameA + " only wins"
-                        + "\n      when it can react. Not a genuine strength advantage.";
+                        + "\n      " + nameB + " holds the tempo advantage.";
             }
             if (p1 >= 0.55 && p2 >= 0.45) {
                 return "  [+] Genuine advantage: " + nameA + " wins on BOTH sides of the board.";
@@ -283,19 +251,16 @@ public class EvalHarness {
         }
     }
 
-    // ------------------------------------------------ Wilson 95% CI helper ---
-
-    /** Returns "p̂=X.X% 95%CI[lo, hi] (k/n)" — Wilson score interval. */
+    // Wilson 95% confidence interval: "p̂=X.X% 95%CI[lo, hi] (k/n)"
     public static String formatRate(int k, int n) {
         if (n == 0) return "  — (0/0)";
         double p = (double) k / n;
         double z = Z_95, z2 = z * z;
-        double denom = 1 + z2 / n;
+        double denom  = 1 + z2 / n;
         double center = (p + z2 / (2.0 * n)) / denom;
-        double half = (z * Math.sqrt(p * (1 - p) / n + z2 / (4.0 * n * n))) / denom;
+        double half   = (z * Math.sqrt(p * (1 - p) / n + z2 / (4.0 * n * n))) / denom;
         double lo = Math.max(0, center - half);
         double hi = Math.min(1, center + half);
-        return String.format("%.1f%% 95%%CI[%.1f, %.1f]  (%d/%d)",
-                p * 100, lo * 100, hi * 100, k, n);
+        return String.format("%.1f%% 95%%CI[%.1f, %.1f]  (%d/%d)", p * 100, lo * 100, hi * 100, k, n);
     }
 }

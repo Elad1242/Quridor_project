@@ -1,3 +1,4 @@
+// v2.0 — refactored and cleaned, May 2026
 package ml.eval;
 import ml.*;
 
@@ -6,17 +7,15 @@ import bot.WallEvaluator;
 import model.GameState;
 import model.Wall;
 
-/**
- * Evaluates FeatureBot vs BotBrain.
- * Usage: java ml.FeatureEvalHarness [modelPath] [numGames]
- */
+// Evaluates FeatureBot vs BotBrain.
+// Usage: java ml.FeatureEvalHarness [modelPath] [numGames]
 public class FeatureEvalHarness {
 
     private static final int MAX_TURNS = 200;
 
     public static void main(String[] args) throws Exception {
         String modelPath = (args.length > 0) ? args[0] : "feature_model.bin";
-        int numGames = (args.length > 1) ? Integer.parseInt(args[1]) : 500;
+        int numGames     = (args.length > 1) ? Integer.parseInt(args[1]) : 500;
 
         WallEvaluator.silent = true;
         System.out.println("=== FeatureBot vs BotBrain ===");
@@ -41,11 +40,12 @@ public class FeatureEvalHarness {
             int mlIdx = mlP1 ? 0 : 1;
 
             GameState state = new GameState();
-            BotBrain brain = new BotBrain();
+            BotBrain brain  = new BotBrain();
             brain.setSilent(true);
 
-            int turns = 0;
+            int turns  = 0;
             boolean running = true;
+
             while (running && !state.isGameOver() && turns < MAX_TURNS) {
                 if (state.getCurrentPlayerIndex() == mlIdx) {
                     FeatureBot.Action a = mlBot.computeBestAction(state);
@@ -59,19 +59,14 @@ public class FeatureEvalHarness {
                     if (a == null) {
                         running = false;
                     } else {
-                        if (a.type == BotBrain.BotAction.Type.MOVE)
-                            state.getCurrentPlayer().setPosition(a.moveTarget);
-                        else {
-                            a.wallToPlace.setOwnerIndex(state.getCurrentPlayerIndex());
-                            state.addWall(a.wallToPlace);
-                        }
+                        applyBrainAction(state, a);
                     }
                 }
-                if (running) {
-                    state.checkWinCondition();
-                    if (!state.isGameOver()) state.nextTurn();
-                    turns++;
-                }
+
+                if (!running) break;
+                state.checkWinCondition();
+                if (!state.isGameOver()) state.nextTurn();
+                turns++;
             }
 
             if (state.isGameOver() && state.getWinner() != null) {
@@ -91,8 +86,17 @@ public class FeatureEvalHarness {
         long elapsed = (System.currentTimeMillis() - start) / 1000;
         float rate = played > 0 ? (float) wins / played : 0;
 
-        System.out.printf("\n=== RESULT: %.1f%% (%d/%d), draws=%d, time=%ds ===%n",
+        System.out.printf("%n=== RESULT: %.1f%% (%d/%d), draws=%d, time=%ds ===%n",
                 rate * 100, wins, played, draws, elapsed);
         return rate;
+    }
+
+    private static void applyBrainAction(GameState state, BotBrain.BotAction a) {
+        if (a.type == BotBrain.BotAction.Type.MOVE) {
+            state.getCurrentPlayer().setPosition(a.moveTarget);
+        } else {
+            a.wallToPlace.setOwnerIndex(state.getCurrentPlayerIndex());
+            state.addWall(a.wallToPlace);
+        }
     }
 }

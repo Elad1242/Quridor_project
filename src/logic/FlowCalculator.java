@@ -1,3 +1,4 @@
+// v2.0 — refactored and cleaned, May 2026
 package logic;
 
 import model.GameState;
@@ -7,32 +8,30 @@ import model.Wall;
 
 import java.util.*;
 
-// Max flow using Edmonds-Karp. Counts how many independent paths a player
-// has to their goal row - more paths means harder to block.
+// Max flow via Edmonds-Karp — counts independent paths to goal.
+// More paths = harder for the opponent to block.
 public class FlowCalculator {
 
     private static final int BOARD_SIZE = GameState.BOARD_SIZE;
     private static final int[][] DIRECTIONS = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
 
-    // each cell is r*9+c, super-sink is node 81
+    // each cell maps to node r*9+c; the sink is node 81
     private static final int SUPER_SINK = BOARD_SIZE * BOARD_SIZE;
     private static final int NODE_COUNT = SUPER_SINK + 1;
 
-    // how many independent paths does this player have to goal
     public static int calculateMaxFlow(GameState state, Player player) {
         int[][] capacity = buildCapacityGraph(state, player.getGoalRow(), null);
         int source = posToIndex(player.getPosition());
         return edmondsKarp(capacity, source, SUPER_SINK);
     }
 
-    // same but with an extra wall added
     public static int calculateMaxFlowWithWall(GameState state, Player player, Wall wall) {
         int[][] capacity = buildCapacityGraph(state, player.getGoalRow(), wall);
         int source = posToIndex(player.getPosition());
         return edmondsKarp(capacity, source, SUPER_SINK);
     }
 
-    // build the capacity graph - each passage has capacity 1
+    // every open passage gets capacity 1; goal row cells connect to the super-sink
     private static int[][] buildCapacityGraph(GameState state, int goalRow, Wall extraWall) {
         int[][] capacity = new int[NODE_COUNT][NODE_COUNT];
 
@@ -43,26 +42,22 @@ public class FlowCalculator {
 
                 for (int[] dir : DIRECTIONS) {
                     Position to = from.move(dir[0], dir[1]);
-                    if (to.isValid()
-                            && !state.isBlocked(from, to)
-                            && (extraWall == null || !extraWall.blocksMove(from, to))) {
-                        int toIdx = posToIndex(to);
-                        capacity[fromIdx][toIdx] = 1;
-                    }
+                    if (!to.isValid()) continue;
+                    if (state.isBlocked(from, to)) continue;
+                    if (extraWall != null && extraWall.blocksMove(from, to)) continue;
+                    capacity[fromIdx][posToIndex(to)] = 1;
                 }
             }
         }
 
-        // goal row cells connect to super-sink
         for (int col = 0; col < BOARD_SIZE; col++) {
-            int goalIdx = posToIndex(new Position(goalRow, col));
-            capacity[goalIdx][SUPER_SINK] = 1;
+            capacity[posToIndex(new Position(goalRow, col))][SUPER_SINK] = 1;
         }
 
         return capacity;
     }
 
-    // edmonds-karp: keep finding augmenting paths with BFS until there are none
+    // Edmonds-Karp: repeatedly find augmenting paths with BFS until none remain
     private static int edmondsKarp(int[][] capacity, int source, int sink) {
         int[][] residual = new int[NODE_COUNT][NODE_COUNT];
         for (int i = 0; i < NODE_COUNT; i++) {
@@ -73,14 +68,13 @@ public class FlowCalculator {
         int[] parent = new int[NODE_COUNT];
 
         while (bfs(residual, source, sink, parent)) {
-            // find bottleneck
+            // find bottleneck along the path
             int pathFlow = Integer.MAX_VALUE;
             for (int v = sink; v != source; v = parent[v]) {
-                int u = parent[v];
-                pathFlow = Math.min(pathFlow, residual[u][v]);
+                pathFlow = Math.min(pathFlow, residual[parent[v]][v]);
             }
 
-            // update residual graph
+            // push flow
             for (int v = sink; v != source; v = parent[v]) {
                 int u = parent[v];
                 residual[u][v] -= pathFlow;
@@ -93,7 +87,7 @@ public class FlowCalculator {
         return totalFlow;
     }
 
-    // BFS to find an augmenting path in the residual graph
+    // BFS to find an augmenting path in the residual graph; fills parent[]
     private static boolean bfs(int[][] residual, int source, int sink, int[] parent) {
         Arrays.fill(parent, -1);
         parent[source] = source;

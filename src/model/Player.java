@@ -1,10 +1,9 @@
+// v2.0 — refactored and cleaned, May 2026
 package model;
 
 import javafx.scene.paint.Color;
 
-/**
- * Represents a player with position, goal row, color, and walls.
- */
+// A player — tracks position, walls, goal row, and color.
 public class Player {
 
     public static final int STARTING_WALLS = 10;

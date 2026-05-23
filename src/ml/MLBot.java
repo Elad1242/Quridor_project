@@ -1,3 +1,4 @@
+// v2.0 — refactored and cleaned, May 2026
 package ml;
 
 import model.GameState;
@@ -9,7 +10,7 @@ public class MLBot {
 
     private final FeatureBot inner;
 
-    /** Loads feature_model.bin. Args are ignored (kept for GameController compat). */
+    // modelDir and modelName are ignored — always loads feature_model.bin
     public MLBot(String modelDir, String modelName) throws Exception {
         this.inner = new FeatureBot("feature_model.bin");
     }
@@ -22,17 +23,13 @@ public class MLBot {
         FeatureBot.Action a = inner.computeBestAction(state);
         if (a == null) return null;
 
-        Action.Type t = (a.type == FeatureBot.Action.Type.MOVE)
-                ? Action.Type.MOVE : Action.Type.WALL;
+        Action.Type t = (a.type == FeatureBot.Action.Type.MOVE) ? Action.Type.MOVE : Action.Type.WALL;
         return new Action(t, a.moveTarget, a.wall, (float) a.score);
-    }
-
-    public void close() {
-        // nothing to close, it's a pure java NN
     }
 
     public static class Action {
         public enum Type { MOVE, WALL }
+
         public final Type type;
         public final Position moveTarget;
         public final Wall wall;

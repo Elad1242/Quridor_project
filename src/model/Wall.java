@@ -1,12 +1,9 @@
+// v2.0 — refactored and cleaned, May 2026
 package model;
 
 import java.util.Objects;
 
-/**
- * Represents a wall on the board.
- * Walls span 2 cells and can be horizontal or vertical.
- * Position refers to the top-left corner (valid range: 0-7).
- */
+// Represents a wall — spans 2 cells, anchored at the top-left corner (valid range: 0-7).
 public class Wall {
 
     public enum Orientation {
@@ -59,36 +56,31 @@ public class Wall {
         return orientation == Orientation.VERTICAL;
     }
 
-    // Checks if this wall blocks movement between two adjacent cells
+    // does this wall block movement between two adjacent cells?
     public boolean blocksMove(Position from, Position to) {
         int fromRow = from.getRow();
         int fromCol = from.getCol();
-        int toRow = to.getRow();
-        int toCol = to.getCol();
+        int toRow   = to.getRow();
+        int toCol   = to.getCol();
         int wallRow = position.getRow();
         int wallCol = position.getCol();
 
         if (isHorizontal()) {
             // horizontal walls block vertical movement
-            if (fromCol == toCol && (fromCol == wallCol || fromCol == wallCol + 1)) {
-                if ((fromRow == wallRow && toRow == wallRow + 1) ||
-                    (fromRow == wallRow + 1 && toRow == wallRow)) {
-                    return true;
-                }
-            }
+            boolean sameCol = fromCol == toCol && (fromCol == wallCol || fromCol == wallCol + 1);
+            if (!sameCol) return false;
+            return (fromRow == wallRow && toRow == wallRow + 1)
+                || (fromRow == wallRow + 1 && toRow == wallRow);
         } else {
             // vertical walls block horizontal movement
-            if (fromRow == toRow && (fromRow == wallRow || fromRow == wallRow + 1)) {
-                if ((fromCol == wallCol && toCol == wallCol + 1) ||
-                    (fromCol == wallCol + 1 && toCol == wallCol)) {
-                    return true;
-                }
-            }
+            boolean sameRow = fromRow == toRow && (fromRow == wallRow || fromRow == wallRow + 1);
+            if (!sameRow) return false;
+            return (fromCol == wallCol && toCol == wallCol + 1)
+                || (fromCol == wallCol + 1 && toCol == wallCol);
         }
-        return false;
     }
 
-    // Checks if this wall overlaps with another wall
+    // does this wall overlap with another one? (same orientation touching, or crossing at the same cell)
     public boolean overlaps(Wall other) {
         int r1 = this.getRow();
         int c1 = this.getCol();
@@ -101,10 +93,10 @@ public class Wall {
             } else {
                 return c1 == c2 && Math.abs(r1 - r2) <= 1;
             }
-        } else {
-            // different orientations cross only at same position
-            return r1 == r2 && c1 == c2;
         }
+
+        // different orientations only cross at the exact same anchor
+        return r1 == r2 && c1 == c2;
     }
 
     public boolean isValidPosition() {

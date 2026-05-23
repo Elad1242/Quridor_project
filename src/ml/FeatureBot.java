@@ -1,3 +1,4 @@
+// v2.0 — refactored and cleaned, May 2026
 package ml;
 
 import logic.MoveValidator;
@@ -12,10 +13,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-// ML bot that scores moves using the neural network.
+// ML bot — scores every legal action with the neural network and picks the best.
 public class FeatureBot {
 
-    // top-k: pick randomly among actions within this range of the best score
+    // pick randomly among actions within this margin of the top score (for variety)
     private static final double TOPK_THRESHOLD = 0.01;
 
     private final NeuralNetwork nn;
@@ -30,26 +31,24 @@ public class FeatureBot {
     }
 
     public Action computeBestAction(GameState state) {
-        // score all legal actions and pick the best
-        Player me = state.getCurrentPlayer();
+        Player me  = state.getCurrentPlayer();
         Player opp = state.getOtherPlayer();
         List<Position> validMoves = MoveValidator.getValidMoves(state, me);
 
-        // check if we can win right now
+        // instant win check
         for (Position move : validMoves) {
             if (move.getRow() == me.getGoalRow()) {
                 return new Action(Action.Type.MOVE, move, null, 1000.0);
             }
         }
 
-        // emergency blocking
+        // emergency blocking — opponent is about to win
         int oppDist = PathFinder.aStarShortestPath(state, opp);
         if (oppDist >= 0 && oppDist <= 2 && me.getWallsRemaining() > 0) {
             Action bestWall = evaluateBestWall(state, me, opp);
             if (bestWall != null) return bestWall;
         }
 
-        // grab all legal moves and score them
         List<Action> candidates = new ArrayList<>();
         double bestScore = Double.NEGATIVE_INFINITY;
 
@@ -60,7 +59,7 @@ public class FeatureBot {
             if (score > bestScore) bestScore = score;
         }
 
-        // try each wall
+        // try all valid walls that actually slow the opponent down
         if (me.getWallsRemaining() > 0) {
             int myDist = PathFinder.aStarShortestPath(state, me);
 
@@ -70,43 +69,38 @@ public class FeatureBot {
                         Wall.Orientation o = (orient == 0)
                                 ? Wall.Orientation.HORIZONTAL : Wall.Orientation.VERTICAL;
                         Wall wall = new Wall(r, c, o);
-                        if (WallValidator.isValidWallPlacement(state, wall)) {
-                            // quick filter: skip walls that don't help
-                            int oppAfter = PathFinder.aStarWithWall(state, opp, wall);
-                            int myAfter = PathFinder.aStarWithWall(state, me, wall);
-                            if (oppAfter >= 0 && myAfter >= 0
-                                    && oppAfter > oppDist
-                                    && myAfter - myDist < 3) {
-                                double[] features = GameFeatures.extractForWall(state, wall);
-                                double score = nn.predict(features);
-                                candidates.add(new Action(Action.Type.WALL, null, wall, score));
-                                if (score > bestScore) bestScore = score;
-                            }
-                        }
+                        if (!WallValidator.isValidWallPlacement(state, wall)) continue;
+
+                        int oppAfter = PathFinder.aStarWithWall(state, opp, wall);
+                        int myAfter  = PathFinder.aStarWithWall(state, me,  wall);
+
+                        // quick filter: skip walls that don't help or hurt us too much
+                        if (oppAfter < 0 || myAfter < 0) continue;
+                        if (oppAfter <= oppDist) continue;
+                        if (myAfter - myDist >= 3) continue;
+
+                        double[] features = GameFeatures.extractForWall(state, wall);
+                        double score = nn.predict(features);
+                        candidates.add(new Action(Action.Type.WALL, null, wall, score));
+                        if (score > bestScore) bestScore = score;
                     }
                 }
             }
         }
 
-        if (candidates.isEmpty()) {
-            return new Action(Action.Type.MOVE, validMoves.get(0), null, 0);
-        }
+        if (candidates.isEmpty()) return new Action(Action.Type.MOVE, validMoves.get(0), null, 0);
 
-        // keep only near-best candidates
+        // pick randomly from near-best candidates for variety
         List<Action> topK = new ArrayList<>();
         for (Action a : candidates) {
             if (a.score >= bestScore - TOPK_THRESHOLD) topK.add(a);
         }
 
-        // pick randomly from the top-k set for variety
         return topK.get(rng.nextInt(topK.size()));
     }
 
-    /** Evaluate walls only (for emergency blocking). */
+    // wall-only evaluation for emergency blocking
     private Action evaluateBestWall(GameState state, Player me, Player opp) {
-        int myDist = PathFinder.aStarShortestPath(state, me);
-        int oppDist = PathFinder.aStarShortestPath(state, opp);
-
         Action bestWall = null;
         double bestScore = Double.NEGATIVE_INFINITY;
 
@@ -116,17 +110,17 @@ public class FeatureBot {
                     Wall.Orientation o = (orient == 0)
                             ? Wall.Orientation.HORIZONTAL : Wall.Orientation.VERTICAL;
                     Wall wall = new Wall(r, c, o);
-                    if (WallValidator.isValidWallPlacement(state, wall)) {
-                        int oppAfter = PathFinder.aStarWithWall(state, opp, wall);
-                        int myAfter = PathFinder.aStarWithWall(state, me, wall);
-                        if (oppAfter >= 0 && myAfter >= 0) {
-                            double[] features = GameFeatures.extractForWall(state, wall);
-                            double score = nn.predict(features);
-                            if (score > bestScore) {
-                                bestScore = score;
-                                bestWall = new Action(Action.Type.WALL, null, wall, score);
-                            }
-                        }
+                    if (!WallValidator.isValidWallPlacement(state, wall)) continue;
+
+                    int oppAfter = PathFinder.aStarWithWall(state, opp, wall);
+                    int myAfter  = PathFinder.aStarWithWall(state, me,  wall);
+                    if (oppAfter < 0 || myAfter < 0) continue;
+
+                    double[] features = GameFeatures.extractForWall(state, wall);
+                    double score = nn.predict(features);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestWall = new Action(Action.Type.WALL, null, wall, score);
                     }
                 }
             }
@@ -137,6 +131,7 @@ public class FeatureBot {
 
     public static class Action {
         public enum Type { MOVE, WALL }
+
         public final Type type;
         public final Position moveTarget;
         public final Wall wall;

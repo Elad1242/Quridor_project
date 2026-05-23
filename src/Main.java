@@ -1,11 +1,9 @@
+// v2.0 — refactored and cleaned, May 2026
 import javafx.application.Application;
 import javafx.stage.Stage;
 import ui.GameController;
 
-/**
- * Entry point for the Quoridor game.
- * Requires Java 17+ and JavaFX SDK 17+.
- */
+// Entry point. Requires Java 17+ and JavaFX SDK 17+.
 public class Main extends Application {
 
     @Override

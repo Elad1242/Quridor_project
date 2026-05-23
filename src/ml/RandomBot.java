@@ -1,3 +1,4 @@
+// v2.0 — refactored and cleaned, May 2026
 package ml;
 
 import logic.MoveValidator;
@@ -21,21 +22,19 @@ public abstract class RandomBot {
         this.rng = new Random(seed);
     }
 
-    /** Choose an action: returns either a Position (move) or a Wall. */
+    // returns either a Position (move) or a Wall
     public abstract Object chooseAction(GameState state);
 
     protected List<Position> getForwardAndSidewaysMoves(GameState state, Player player) {
         List<Position> all = MoveValidator.getValidMoves(state, player);
         List<Position> result = new ArrayList<>();
-        int goalRow = player.getGoalRow();
+        int goalRow    = player.getGoalRow();
         int currentRow = player.getPosition().getRow();
         int forwardDir = (goalRow < currentRow) ? -1 : 1;
 
         for (Position p : all) {
             int dr = p.getRow() - currentRow;
-            if (dr == forwardDir || dr == 0) {
-                result.add(p);
-            }
+            if (dr == forwardDir || dr == 0) result.add(p);
         }
         return result.isEmpty() ? all : result;
     }
@@ -53,7 +52,7 @@ public abstract class RandomBot {
         return walls;
     }
 
-    /** Picks uniformly from all legal actions (moves + walls). Creates chaotic boards. */
+    // picks uniformly from all legal actions (moves + walls) — creates chaotic boards
     public static class UniformRandom extends RandomBot {
         public UniformRandom(long seed) { super(seed); }
 
@@ -67,15 +66,12 @@ public abstract class RandomBot {
             if (total == 0) return moves.get(0); // shouldn't happen
 
             int pick = rng.nextInt(total);
-            if (pick < moves.size()) {
-                return moves.get(pick);
-            } else {
-                return walls.get(pick - moves.size());
-            }
+            if (pick < moves.size()) return moves.get(pick);
+            return walls.get(pick - moves.size());
         }
     }
 
-    /** Only forward/sideways pawn moves, never walls. Pure movement races. */
+    // only forward/sideways moves, never walls — pure racing
     public static class ForwardRandom extends RandomBot {
         public ForwardRandom(long seed) { super(seed); }
 
@@ -87,28 +83,23 @@ public abstract class RandomBot {
         }
     }
 
-    /** 50/50 random wall or random forward move. Creates congested boards. */
+    // 50/50 random wall or random forward move — creates congested boards
     public static class RandomWaller extends RandomBot {
         public RandomWaller(long seed) { super(seed); }
 
         @Override
         public Object chooseAction(GameState state) {
             Player me = state.getCurrentPlayer();
-            boolean tryWall = rng.nextDouble() < 0.5 && me.getWallsRemaining() > 0;
-
-            if (tryWall) {
+            if (rng.nextDouble() < 0.5 && me.getWallsRemaining() > 0) {
                 List<Wall> walls = getAllValidWalls(state);
-                if (!walls.isEmpty()) {
-                    return walls.get(rng.nextInt(walls.size()));
-                }
+                if (!walls.isEmpty()) return walls.get(rng.nextInt(walls.size()));
             }
-
             List<Position> moves = getForwardAndSidewaysMoves(state, me);
             return moves.get(rng.nextInt(moves.size()));
         }
     }
 
-    /** 70% follows shortest path, 30% random move, 15% chance of random wall. */
+    // 70% follows shortest path, 30% random move, 15% chance of random wall
     public static class SemiSmart extends RandomBot {
         public SemiSmart(long seed) { super(seed); }
 
@@ -116,18 +107,15 @@ public abstract class RandomBot {
         public Object chooseAction(GameState state) {
             Player me = state.getCurrentPlayer();
 
-            // 15% chance of random wall
             if (rng.nextDouble() < 0.15 && me.getWallsRemaining() > 0) {
                 List<Wall> walls = getAllValidWalls(state);
-                if (!walls.isEmpty()) {
-                    return walls.get(rng.nextInt(walls.size()));
-                }
+                if (!walls.isEmpty()) return walls.get(rng.nextInt(walls.size()));
             }
 
             List<Position> validMoves = MoveValidator.getValidMoves(state, me);
 
-            // 70% follow shortest path
             if (rng.nextDouble() < 0.7) {
+                // greedy: pick the move that minimizes A* distance
                 int bestDist = Integer.MAX_VALUE;
                 Position bestMove = validMoves.get(0);
                 for (Position move : validMoves) {
@@ -142,7 +130,6 @@ public abstract class RandomBot {
                 return bestMove;
             }
 
-            // 30% random move
             return validMoves.get(rng.nextInt(validMoves.size()));
         }
     }

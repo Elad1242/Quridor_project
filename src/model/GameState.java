@@ -1,3 +1,4 @@
+// v2.0 — refactored and cleaned, May 2026
 package model;
 
 import javafx.scene.paint.Color;
@@ -5,9 +6,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * Holds all game data: players, walls, turns, and win state.
- */
+// All game data: players, walls, whose turn it is, win state.
 public class GameState {
 
     public static final int BOARD_SIZE = 9;
@@ -26,7 +25,7 @@ public class GameState {
     public GameState(String player1Name, String player2Name) {
         players = new Player[2];
 
-        // Player 1: starts bottom, goal is top
+        // player 1: starts bottom, goal is top (row 0)
         players[0] = new Player(
             player1Name,
             new Position(8, 4),
@@ -34,7 +33,7 @@ public class GameState {
             Color.web("#2C3E50")
         );
 
-        // Player 2: starts top, goal is bottom
+        // player 2: starts top, goal is bottom (row 8)
         players[1] = new Player(
             player2Name,
             new Position(0, 4),
@@ -65,29 +64,25 @@ public class GameState {
         return players;
     }
 
-    //return a list that cannot be modified
     public List<Wall> getWalls() {
         return Collections.unmodifiableList(walls);
     }
 
-    // Adds wall and decrements player's wall count
+    // places a wall and debits the current player's wall count
     public void addWall(Wall wall) {
         wall.setOwnerIndex(currentPlayerIndex);
         walls.add(wall);
         getCurrentPlayer().useWall();
     }
 
-    // Checks if any wall blocks movement between two cells
+    // returns true if any placed wall blocks movement between the two cells
     public boolean isBlocked(Position from, Position to) {
         for (Wall wall : walls) {
-            if (wall.blocksMove(from, to)) {
-                return true;
-            }
+            if (wall.blocksMove(from, to)) return true;
         }
         return false;
     }
 
-    // Switches turn to the other player
     public void nextTurn() {
         currentPlayerIndex = 1 - currentPlayerIndex;
         turnCount++;
@@ -114,7 +109,6 @@ public class GameState {
         this.winner = winner;
     }
 
-    // Check if someone won
     public void checkWinCondition() {
         for (Player player : players) {
             if (player.hasReachedGoal()) {
@@ -124,6 +118,8 @@ public class GameState {
         }
     }
 
+    // NOTE: despite the name, this returns true when the square is CLEAR (no player on it).
+    // used in MoveValidator to decide if a jump target is available.
     public boolean isOccupied(Position pos) {
         for (Player player : players) {
             if (player.getPosition().equals(pos)) {
@@ -133,16 +129,10 @@ public class GameState {
         return true;
     }
 
-
-    /**
-     * Creates a deep copy of the entire game state for bot simulation.
-     * The bot uses this to "imagine" future moves without affecting the real game.
-     * All mutable objects (players, walls, positions) are cloned independently.
-     */
+    // deep copy for bot simulation — doesn't affect the real game
     public GameState deepCopy() {
         GameState copy = new GameState();
 
-        // Copy each player's current state (position, walls remaining)
         for (int i = 0; i < 2; i++) {
             Player original = this.players[i];
             Player cloned = copy.players[i];
@@ -151,7 +141,6 @@ public class GameState {
             cloned.setWallsRemaining(original.getWallsRemaining());
         }
 
-        // Copy all walls on the board
         for (Wall wall : this.walls) {
             Wall wallCopy = new Wall(wall.getRow(), wall.getCol(), wall.getOrientation());
             wallCopy.setOwnerIndex(wall.getOwnerIndex());
@@ -161,7 +150,7 @@ public class GameState {
         copy.currentPlayerIndex = this.currentPlayerIndex;
         copy.turnCount = this.turnCount;
         copy.gameOver = this.gameOver;
-        // winner reference points to copy's player array
+
         if (this.winner != null) {
             int winnerIdx = (this.winner == this.players[0]) ? 0 : 1;
             copy.winner = copy.players[winnerIdx];

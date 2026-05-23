@@ -1,11 +1,9 @@
+// v2.0 — refactored and cleaned, May 2026
 package model;
 
 import java.util.Objects;
 
-/**
- * Represents a position on the 9x9 board.
- * Row 0 is top, row 8 is bottom.
- */
+// A cell on the 9x9 board. Row 0 is top, row 8 is bottom.
 public class Position {
 
     private final int row;
@@ -24,12 +22,10 @@ public class Position {
         return col;
     }
 
-    // Returns new position offset by given amounts
     public Position move(int dRow, int dCol) {
         return new Position(row + dRow, col + dCol);
     }
 
-    // Checks if position is within board bounds
     public boolean isValid() {
         return row >= 0 && row < 9 && col >= 0 && col < 9;
     }

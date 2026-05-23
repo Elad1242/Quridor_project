@@ -1,3 +1,4 @@
+// v2.0 — refactored and cleaned, May 2026
 package ui;
 
 import javafx.animation.KeyFrame;
@@ -27,9 +28,7 @@ import ml.MLBot;
 
 import java.util.List;
 
-/**
- * Main controller - handles UI, user input, timer, and game flow.
- */
+// Main controller: UI, user input, timer, and game flow.
 public class GameController {
 
     private static final int TURN_TIME_SECONDS = 15;
@@ -61,33 +60,30 @@ public class GameController {
     private String player1Name = "Player 1";
     private String player2Name = "Player 2";
 
-    // --- Bot integration ---
-    // Player 2 can be controlled by BotBrain (algorithmic) or MLBot (pure-Java NN).
-    // When active, human input is blocked during the bot's turn and
-    // the bot computes its action in a background thread.
-    private boolean player2IsBot = false;
-    private boolean player1IsBot = false; // Bot vs Bot mode
-    private BotBrain botBrain;    // Brain for player 2
-    private BotBrain botBrain1;   // Brain for player 1 (Bot vs Bot mode)
-    private MLBot mlBot;          // Pure-Java NN bot
-    private boolean player1IsMLBot = false; // MLBot vs BotBrain mode
-    private boolean player2IsMLBot = false; // Human vs MLBot mode
-    private boolean botThinking = false; // True while bot is computing
+    // bot mode flags
+    private boolean player2IsBot   = false;
+    private boolean player1IsBot   = false; // bot vs bot mode
+    private BotBrain botBrain;              // brain for player 2
+    private BotBrain botBrain1;             // brain for player 1 (bot vs bot)
+    private MLBot mlBot;
+    private boolean player1IsMLBot = false;
+    private boolean player2IsMLBot = false;
+    private boolean botThinking    = false; // true while bot is computing in background
 
-    // --- Bot vs Bot controls ---
-    private boolean botVsBotPaused = false;
-    private int botVsBotDelayMs = 600; // Delay between moves in ms
+    // bot vs bot controls
+    private boolean botVsBotPaused  = false;
+    private int botVsBotDelayMs     = 600;
     private Label speedLabel;
     private Button pauseButton;
 
-    // --- MLBot vs BotBrain tracking ---
-    private int mlBotWins = 0;
+    // MLBot vs BotBrain win tracking
+    private int mlBotWins    = 0;
     private int botBrainWins = 0;
     private Label scoreLabel;
 
-    // --- Game generation counter (prevents stale bot actions after restart) ---
+    // incremented on restart to invalidate stale bot callbacks
     private int gameGeneration = 0;
-    private Timeline pendingBotDelay; // Track pending bot delay for cancellation
+    private Timeline pendingBotDelay = null;
 
     public GameController(Stage stage) {
         this.primaryStage = stage;
@@ -95,53 +91,14 @@ public class GameController {
         showPlayerNameDialog();
 
         gameState = new GameState(player1Name, player2Name);
+        initBots();
 
-        // Initialize bots if AI-controlled
-        if (player1IsBot && player2IsBot) {
-            if (player1IsMLBot) {
-                // MLBot vs BotBrain mode - 6 random opens for variety across games
-                try {
-                    mlBot = new MLBot("models", "best-model");
-                } catch (Exception ex) {
-                    System.err.println("Failed to load MLBot: " + ex.getMessage());
-                    mlBot = null;
-                }
-                botBrain = new BotBrain(6);
-                botBrain.setSilent(true);
-                botBrain1 = null;
-            } else {
-                // Bot vs Bot: 6 random opening moves for variety
-                botBrain  = new BotBrain(6); // Bot B
-                botBrain1 = new BotBrain(6); // Bot A
-                botBrain.setSilent(true);
-                botBrain1.setSilent(true);
-            }
-        } else if (player2IsBot) {
-            if (player2IsMLBot) {
-                // Human vs MLBot mode
-                try {
-                    mlBot = new MLBot("models", "best-model");
-                } catch (Exception ex) {
-                    System.err.println("Failed to load MLBot: " + ex.getMessage());
-                    mlBot = null;
-                }
-                botBrain = null;
-            } else {
-                // Human vs BotBrain mode
-                botBrain = new BotBrain(); // Deterministic for Human vs Bot
-                botBrain.setSilent(true);
-            }
-        }
-
-        // Compute sizes based on screen
         Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
         double screenW = screenBounds.getWidth();
         double screenH = screenBounds.getHeight();
 
-        // Board should fit within the screen height minus space for top/bottom panels (~280px)
-        // and width minus side panels (~400px)
+        // fit board within screen, leaving room for panels
         double availableForBoard = Math.min(screenH - 280, screenW - 400);
-        // Clamp between a reasonable min and max
         availableForBoard = Math.max(400, Math.min(650, availableForBoard));
 
         boardView = new BoardView(availableForBoard);
@@ -161,27 +118,60 @@ public class GameController {
 
         boardView.update();
         updateUI();
-
         initializeTimer();
 
         if (player1IsBot && player2IsBot) {
-            // Bot vs Bot: hide timer and start bot 1's turn
             stopTimer();
-            if (player1IsMLBot) {
-                timerLabel.setText("🤖 MLBot (NN) vs BotBrain 🤖");
-                timerLabel.setTextFill(Color.web("#e74c3c"));
-            } else {
-                timerLabel.setText("🤖 Bot vs Bot");
-                timerLabel.setTextFill(Color.web("#9b59b6"));
-            }
-            // Use a short delay to let the UI finish rendering
-            Timeline startDelay = new Timeline(new KeyFrame(Duration.millis(500), e -> {
-                triggerBotTurnIfNeeded();
-            }));
-            startDelay.play();
+            setBotVsBotTimerLabel();
+            // short delay so the UI finishes rendering before the first bot move
+            new Timeline(new KeyFrame(Duration.millis(500), e -> triggerBotTurnIfNeeded())).play();
         } else {
             startTimer();
-            triggerBotTurnIfNeeded(); // In case player1 is not bot but player2 is (shouldn't happen with current setup)
+            triggerBotTurnIfNeeded();
+        }
+    }
+
+    // sets up bots based on the flags set by the name dialog
+    private void initBots() {
+        if (player1IsBot && player2IsBot) {
+            if (player1IsMLBot) {
+                mlBot    = loadMLBot();
+                botBrain = new BotBrain(6);
+                botBrain.setSilent(true);
+                botBrain1 = null;
+            } else {
+                botBrain  = new BotBrain(6);
+                botBrain1 = new BotBrain(6);
+                botBrain.setSilent(true);
+                botBrain1.setSilent(true);
+            }
+        } else if (player2IsBot) {
+            if (player2IsMLBot) {
+                mlBot    = loadMLBot();
+                botBrain = null;
+            } else {
+                botBrain = new BotBrain();
+                botBrain.setSilent(true);
+            }
+        }
+    }
+
+    private MLBot loadMLBot() {
+        try {
+            return new MLBot("models", "best-model");
+        } catch (Exception ex) {
+            System.err.println("Failed to load MLBot: " + ex.getMessage());
+            return null;
+        }
+    }
+
+    private void setBotVsBotTimerLabel() {
+        if (player1IsMLBot) {
+            timerLabel.setText("🤖 MLBot (NN) vs BotBrain 🤖");
+            timerLabel.setTextFill(Color.web("#e74c3c"));
+        } else {
+            timerLabel.setText("🤖 Bot vs Bot");
+            timerLabel.setTextFill(Color.web("#9b59b6"));
         }
     }
 
@@ -209,7 +199,6 @@ public class GameController {
 
         VBox player1Box = new VBox(5);
         player1Box.setAlignment(Pos.CENTER_LEFT);
-
         HBox player1Header = new HBox(10);
         player1Header.setAlignment(Pos.CENTER_LEFT);
         Circle p1Icon = new Circle(12);
@@ -220,18 +209,15 @@ public class GameController {
         p1Label.setFont(Font.font("Arial", FontWeight.BOLD, 14));
         p1Label.setTextFill(Color.web("#ecf0f1"));
         player1Header.getChildren().addAll(p1Icon, p1Label);
-
         TextField player1Field = new TextField("Player 1");
         player1Field.setFont(Font.font("Arial", 14));
         player1Field.setPrefWidth(250);
         player1Field.setStyle("-fx-background-color: #34495e; -fx-text-fill: #ecf0f1; " +
                              "-fx-background-radius: 5; -fx-padding: 10;");
-
         player1Box.getChildren().addAll(player1Header, player1Field);
 
         VBox player2Box = new VBox(5);
         player2Box.setAlignment(Pos.CENTER_LEFT);
-
         HBox player2Header = new HBox(10);
         player2Header.setAlignment(Pos.CENTER_LEFT);
         Circle p2Icon = new Circle(12);
@@ -242,154 +228,91 @@ public class GameController {
         p2Label.setFont(Font.font("Arial", FontWeight.BOLD, 14));
         p2Label.setTextFill(Color.web("#ecf0f1"));
         player2Header.getChildren().addAll(p2Icon, p2Label);
-
         TextField player2Field = new TextField("Player 2");
         player2Field.setFont(Font.font("Arial", 14));
         player2Field.setPrefWidth(250);
         player2Field.setStyle("-fx-background-color: #34495e; -fx-text-fill: #ecf0f1; " +
                              "-fx-background-radius: 5; -fx-padding: 10;");
-
         player2Box.getChildren().addAll(player2Header, player2Field);
 
-        // --- Bot toggle checkbox ---
-        CheckBox botCheckbox = new CheckBox("🤖 Play against BotBrain");
-        botCheckbox.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-        botCheckbox.setTextFill(Color.web("#e67e22"));
-        botCheckbox.setSelected(player2IsBot && !player2IsMLBot && !player1IsBot);
-        botCheckbox.setStyle("-fx-cursor: hand;");
-
-        // --- Bot vs Bot checkbox ---
-        CheckBox botVsBotCheckbox = new CheckBox("🤖 Watch BotBrain vs BotBrain");
-        botVsBotCheckbox.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-        botVsBotCheckbox.setTextFill(Color.web("#9b59b6"));
-        botVsBotCheckbox.setSelected(player1IsBot && player2IsBot && !player1IsMLBot);
-        botVsBotCheckbox.setStyle("-fx-cursor: hand;");
-
-        // --- MLBot vs BotBrain checkbox ---
-        CheckBox mlBotCheckbox = new CheckBox("🤖 Watch MLBot vs BotBrain");
-        mlBotCheckbox.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-        mlBotCheckbox.setTextFill(Color.web("#e74c3c"));
-        mlBotCheckbox.setSelected(player1IsMLBot);
-        mlBotCheckbox.setStyle("-fx-cursor: hand;");
-
-        // --- Human vs MLBot checkbox (play against our pure-Java NN) ---
+        CheckBox botCheckbox         = new CheckBox("🤖 Play against BotBrain");
+        CheckBox botVsBotCheckbox    = new CheckBox("🤖 Watch BotBrain vs BotBrain");
+        CheckBox mlBotCheckbox       = new CheckBox("🤖 Watch MLBot vs BotBrain");
         CheckBox humanVsMLBotCheckbox = new CheckBox("🎮 Play against MLBot");
-        humanVsMLBotCheckbox.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-        humanVsMLBotCheckbox.setTextFill(Color.web("#16a085"));
-        humanVsMLBotCheckbox.setSelected(player2IsMLBot);
-        humanVsMLBotCheckbox.setStyle("-fx-cursor: hand;");
 
-        // When BotBrain is enabled, auto-fill player 2 name
+        styleCheckbox(botCheckbox,          "#e67e22", player2IsBot && !player2IsMLBot && !player1IsBot);
+        styleCheckbox(botVsBotCheckbox,     "#9b59b6", player1IsBot && player2IsBot && !player1IsMLBot);
+        styleCheckbox(mlBotCheckbox,        "#e74c3c", player1IsMLBot);
+        styleCheckbox(humanVsMLBotCheckbox, "#16a085", player2IsMLBot);
+
         botCheckbox.setOnAction(e -> {
-            if (botCheckbox.isSelected()) {
-                botVsBotCheckbox.setSelected(false);
-                mlBotCheckbox.setSelected(false);
-                humanVsMLBotCheckbox.setSelected(false);
-                player1Field.setText("Player 1");
-                player1Field.setDisable(false);
-                player2Field.setText("BotBrain");
-                player2Field.setDisable(true);
-            } else {
-                player2Field.setText("Player 2");
-                player2Field.setDisable(false);
-            }
+            if (!botCheckbox.isSelected()) { player2Field.setText("Player 2"); player2Field.setDisable(false); return; }
+            botVsBotCheckbox.setSelected(false); mlBotCheckbox.setSelected(false); humanVsMLBotCheckbox.setSelected(false);
+            player1Field.setText("Player 1"); player1Field.setDisable(false);
+            player2Field.setText("BotBrain"); player2Field.setDisable(true);
         });
 
         botVsBotCheckbox.setOnAction(e -> {
-            if (botVsBotCheckbox.isSelected()) {
-                botCheckbox.setSelected(false);
-                mlBotCheckbox.setSelected(false);
-                humanVsMLBotCheckbox.setSelected(false);
-                player1Field.setText("BotBrain A");
-                player1Field.setDisable(true);
-                player2Field.setText("BotBrain B");
-                player2Field.setDisable(true);
-            } else {
-                player1Field.setText("Player 1");
-                player1Field.setDisable(false);
-                player2Field.setText("Player 2");
-                player2Field.setDisable(false);
+            if (!botVsBotCheckbox.isSelected()) {
+                player1Field.setText("Player 1"); player1Field.setDisable(false);
+                player2Field.setText("Player 2"); player2Field.setDisable(false);
+                return;
             }
+            botCheckbox.setSelected(false); mlBotCheckbox.setSelected(false); humanVsMLBotCheckbox.setSelected(false);
+            player1Field.setText("BotBrain A"); player1Field.setDisable(true);
+            player2Field.setText("BotBrain B"); player2Field.setDisable(true);
         });
 
         mlBotCheckbox.setOnAction(e -> {
-            if (mlBotCheckbox.isSelected()) {
-                botCheckbox.setSelected(false);
-                botVsBotCheckbox.setSelected(false);
-                humanVsMLBotCheckbox.setSelected(false);
-                player1Field.setText("MLBot (NN)");
-                player1Field.setDisable(true);
-                player2Field.setText("BotBrain");
-                player2Field.setDisable(true);
-            } else {
-                player1Field.setText("Player 1");
-                player1Field.setDisable(false);
-                player2Field.setText("Player 2");
-                player2Field.setDisable(false);
+            if (!mlBotCheckbox.isSelected()) {
+                player1Field.setText("Player 1"); player1Field.setDisable(false);
+                player2Field.setText("Player 2"); player2Field.setDisable(false);
+                return;
             }
+            botCheckbox.setSelected(false); botVsBotCheckbox.setSelected(false); humanVsMLBotCheckbox.setSelected(false);
+            player1Field.setText("MLBot (NN)"); player1Field.setDisable(true);
+            player2Field.setText("BotBrain");   player2Field.setDisable(true);
         });
 
-        // Human vs MLBot mode - play against the pure-Java NN
         humanVsMLBotCheckbox.setOnAction(e -> {
-            if (humanVsMLBotCheckbox.isSelected()) {
-                botCheckbox.setSelected(false);
-                botVsBotCheckbox.setSelected(false);
-                mlBotCheckbox.setSelected(false);
-                player1Field.setText("Player 1");
-                player1Field.setDisable(false);
-                player2Field.setText("MLBot (Java NN)");
-                player2Field.setDisable(true);
-            } else {
-                player2Field.setText("Player 2");
-                player2Field.setDisable(false);
-            }
+            if (!humanVsMLBotCheckbox.isSelected()) { player2Field.setText("Player 2"); player2Field.setDisable(false); return; }
+            botCheckbox.setSelected(false); botVsBotCheckbox.setSelected(false); mlBotCheckbox.setSelected(false);
+            player1Field.setText("Player 1");      player1Field.setDisable(false);
+            player2Field.setText("MLBot (Java NN)"); player2Field.setDisable(true);
         });
 
-        // Apply initial state if bot was already selected (e.g. on restart)
+        // restore dialog state on restart
         if (player1IsMLBot) {
             mlBotCheckbox.setSelected(true);
-            player1Field.setText("MLBot (NN)");
-            player1Field.setDisable(true);
-            player2Field.setText("BotBrain");
-            player2Field.setDisable(true);
+            player1Field.setText("MLBot (NN)"); player1Field.setDisable(true);
+            player2Field.setText("BotBrain");   player2Field.setDisable(true);
         } else if (player2IsMLBot) {
             humanVsMLBotCheckbox.setSelected(true);
-            player2Field.setText("MLBot (Java NN)");
-            player2Field.setDisable(true);
+            player2Field.setText("MLBot (Java NN)"); player2Field.setDisable(true);
         } else if (player1IsBot && player2IsBot) {
             botVsBotCheckbox.setSelected(true);
-            player1Field.setText("Bot A");
-            player1Field.setDisable(true);
-            player2Field.setText("Bot B");
-            player2Field.setDisable(true);
+            player1Field.setText("Bot A"); player1Field.setDisable(true);
+            player2Field.setText("Bot B"); player2Field.setDisable(true);
         } else if (player2IsBot) {
             botCheckbox.setSelected(true);
-            player2Field.setText("BotBrain");
-            player2Field.setDisable(true);
+            player2Field.setText("BotBrain"); player2Field.setDisable(true);
         }
 
         Button startButton = new Button("Start Game");
         startButton.setFont(Font.font("Arial", FontWeight.BOLD, 16));
         startButton.setPrefSize(200, 45);
-        startButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white; " +
-                            "-fx-background-radius: 5; -fx-cursor: hand;");
-
-        startButton.setOnMouseEntered(e ->
-            startButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white; " +
-                                "-fx-background-radius: 5; -fx-cursor: hand;")
-        );
-        startButton.setOnMouseExited(e ->
-            startButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white; " +
-                                "-fx-background-radius: 5; -fx-cursor: hand;")
-        );
+        startButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white; -fx-background-radius: 5; -fx-cursor: hand;");
+        startButton.setOnMouseEntered(e -> startButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white; -fx-background-radius: 5; -fx-cursor: hand;"));
+        startButton.setOnMouseExited(e ->  startButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white; -fx-background-radius: 5; -fx-cursor: hand;"));
 
         startButton.setOnAction(e -> {
             String name1 = player1Field.getText().trim();
             String name2 = player2Field.getText().trim();
             player1Name = name1.isEmpty() ? "Player 1" : name1;
             player2Name = name2.isEmpty() ? "Player 2" : name2;
-            player2IsBot = botCheckbox.isSelected() || botVsBotCheckbox.isSelected() || mlBotCheckbox.isSelected() || humanVsMLBotCheckbox.isSelected();
-            player1IsBot = botVsBotCheckbox.isSelected() || mlBotCheckbox.isSelected();
+            player2IsBot   = botCheckbox.isSelected() || botVsBotCheckbox.isSelected()
+                          || mlBotCheckbox.isSelected() || humanVsMLBotCheckbox.isSelected();
+            player1IsBot   = botVsBotCheckbox.isSelected() || mlBotCheckbox.isSelected();
             player1IsMLBot = mlBotCheckbox.isSelected();
             player2IsMLBot = humanVsMLBotCheckbox.isSelected();
             dialog.close();
@@ -399,7 +322,8 @@ public class GameController {
         player1Field.setOnAction(e -> player2Field.requestFocus());
 
         mainContainer.getChildren().addAll(titleLabel, subtitleLabel,
-                                           player1Box, player2Box, botCheckbox, botVsBotCheckbox, mlBotCheckbox, humanVsMLBotCheckbox, startButton);
+                player1Box, player2Box, botCheckbox, botVsBotCheckbox,
+                mlBotCheckbox, humanVsMLBotCheckbox, startButton);
 
         Scene dialogScene = new Scene(mainContainer, 380, 650);
         dialog.setScene(dialogScene);
@@ -407,26 +331,23 @@ public class GameController {
         dialog.showAndWait();
     }
 
+    private void styleCheckbox(CheckBox cb, String color, boolean selected) {
+        cb.setFont(Font.font("Arial", FontWeight.BOLD, 14));
+        cb.setTextFill(Color.web(color));
+        cb.setSelected(selected);
+        cb.setStyle("-fx-cursor: hand;");
+    }
+
     private BorderPane createMainLayout() {
         BorderPane root = new BorderPane();
         root.setStyle("-fx-background-color: linear-gradient(to bottom, #1a1a2e, #16213e);");
         root.setPadding(new Insets(10));
 
-        VBox topPanel = createTopPanel();
-        root.setTop(topPanel);
-
-        StackPane centerPane = new StackPane(boardView);
-        centerPane.setPadding(new Insets(10));
-        root.setCenter(centerPane);
-
-        player1Panel = createPlayerPanel(0);
-        root.setLeft(player1Panel);
-
-        player2Panel = createPlayerPanel(1);
-        root.setRight(player2Panel);
-
-        HBox bottomPanel = createBottomPanel();
-        root.setBottom(bottomPanel);
+        root.setTop(createTopPanel());
+        root.setCenter(new StackPane(boardView) {{ setPadding(new Insets(10)); }});
+        root.setLeft(player1Panel  = createPlayerPanel(0));
+        root.setRight(player2Panel = createPlayerPanel(1));
+        root.setBottom(createBottomPanel());
 
         return root;
     }
@@ -476,8 +397,7 @@ public class GameController {
         nameLabel.setFont(Font.font("Arial", FontWeight.BOLD, 16));
         nameLabel.setTextFill(Color.web("#ecf0f1"));
 
-        String goalText = playerIndex == 0 ? "Goal: Top ↑" : "Goal: Bottom ↓";
-        Label goalLabel = new Label(goalText);
+        Label goalLabel = new Label(playerIndex == 0 ? "Goal: Top ↑" : "Goal: Bottom ↓");
         goalLabel.setFont(Font.font("Arial", 12));
         goalLabel.setTextFill(Color.web("#95a5a6"));
 
@@ -489,11 +409,8 @@ public class GameController {
         wallsLabel.setFont(Font.font("Arial", FontWeight.BOLD, 24));
         wallsLabel.setTextFill(Color.web("#3498db"));
 
-        if (playerIndex == 0) {
-            player1WallsLabel = wallsLabel;
-        } else {
-            player2WallsLabel = wallsLabel;
-        }
+        if (playerIndex == 0) player1WallsLabel = wallsLabel;
+        else                  player2WallsLabel = wallsLabel;
 
         Color wallColor = (playerIndex == 0) ? Color.web("#e74c3c") : Color.web("#f1c40f");
         VBox wallIndicators = new VBox(3);
@@ -513,21 +430,20 @@ public class GameController {
         }
 
         if (playerIndex == 0) {
-            player1WallIndicators = new HBox[2];
-            player1WallIndicators[0] = (HBox) wallIndicators.getChildren().get(0);
-            player1WallIndicators[1] = (HBox) wallIndicators.getChildren().get(1);
+            player1WallIndicators = new HBox[]{
+                (HBox) wallIndicators.getChildren().get(0),
+                (HBox) wallIndicators.getChildren().get(1)
+            };
         } else {
-            player2WallIndicators = new HBox[2];
-            player2WallIndicators[0] = (HBox) wallIndicators.getChildren().get(0);
-            player2WallIndicators[1] = (HBox) wallIndicators.getChildren().get(1);
+            player2WallIndicators = new HBox[]{
+                (HBox) wallIndicators.getChildren().get(0),
+                (HBox) wallIndicators.getChildren().get(1)
+            };
         }
-
-        panel.getChildren().addAll(icon, nameLabel, goalLabel,
-                new Region(), wallsTitle, wallsLabel, wallIndicators);
 
         Region spacer = new Region();
         VBox.setVgrow(spacer, Priority.ALWAYS);
-        panel.getChildren().add(3, spacer);
+        panel.getChildren().addAll(icon, nameLabel, goalLabel, spacer, wallsTitle, wallsLabel, wallIndicators);
 
         return panel;
     }
@@ -558,12 +474,9 @@ public class GameController {
         restartButton.setOnAction(e -> restart());
 
         updateModeButtons();
-
         panel.getChildren().addAll(movePawnButton, placeWallButton, restartButton);
 
-        // Bot vs Bot speed controls
         if (player1IsBot && player2IsBot) {
-            // Hide move/wall buttons (not needed in bot mode)
             movePawnButton.setVisible(false);
             movePawnButton.setManaged(false);
             placeWallButton.setVisible(false);
@@ -596,16 +509,13 @@ public class GameController {
 
             panel.getChildren().addAll(spacer, pauseButton, slowerButton, fasterButton, speedLabel);
 
-            // Add score tracker for MLBot vs BotBrain
             if (player1IsMLBot) {
                 Region spacer2 = new Region();
                 spacer2.setPrefWidth(30);
-
                 scoreLabel = new Label("Score: MLBot " + mlBotWins + " - " + botBrainWins + " BotBrain");
                 scoreLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
                 scoreLabel.setTextFill(Color.web("#f1c40f"));
                 scoreLabel.setStyle("-fx-background-color: #34495e; -fx-padding: 8 15; -fx-background-radius: 5;");
-
                 panel.getChildren().addAll(spacer2, scoreLabel);
             }
         }
@@ -614,39 +524,16 @@ public class GameController {
     }
 
     private void styleButton(Button button, String color) {
-        button.setStyle(
-                "-fx-background-color: " + color + ";" +
-                "-fx-text-fill: white;" +
-                "-fx-background-radius: 5;" +
-                "-fx-cursor: hand;"
-        );
-
-        button.setOnMouseEntered(e ->
-                button.setStyle(
-                        "-fx-background-color: derive(" + color + ", 20%);" +
-                        "-fx-text-fill: white;" +
-                        "-fx-background-radius: 5;" +
-                        "-fx-cursor: hand;"
-                )
-        );
-
-        button.setOnMouseExited(e ->
-                button.setStyle(
-                        "-fx-background-color: " + color + ";" +
-                        "-fx-text-fill: white;" +
-                        "-fx-background-radius: 5;" +
-                        "-fx-cursor: hand;"
-                )
-        );
+        button.setStyle("-fx-background-color: " + color + "; -fx-text-fill: white; -fx-background-radius: 5; -fx-cursor: hand;");
+        button.setOnMouseEntered(e -> button.setStyle("-fx-background-color: derive(" + color + ", 20%); -fx-text-fill: white; -fx-background-radius: 5; -fx-cursor: hand;"));
+        button.setOnMouseExited(e  -> button.setStyle("-fx-background-color: " + color + "; -fx-text-fill: white; -fx-background-radius: 5; -fx-cursor: hand;"));
     }
 
     private void initializeTimer() {
         turnTimer = new Timeline(new KeyFrame(Duration.seconds(1), e -> {
             timeRemaining--;
             updateTimerDisplay();
-            if (timeRemaining <= 0) {
-                onTimeUp();
-            }
+            if (timeRemaining <= 0) onTimeUp();
         }));
         turnTimer.setCycleCount(Timeline.INDEFINITE);
     }
@@ -675,64 +562,61 @@ public class GameController {
 
     private void onTimeUp() {
         if (gameState.isGameOver()) return;
-        if (botThinking) return; // Don't timeout while bot is computing
-        if (player1IsBot && player2IsBot) return; // No timeout in bot vs bot
+        if (botThinking) return;
+        if (player1IsBot && player2IsBot) return;
 
         statusLabel.setText(gameState.getCurrentPlayer().getName() + " ran out of time!");
-
         gameState.nextTurn();
         wallMode = false;
         updateModeButtons();
         boardView.update();
         updateUI();
         startTimer();
-        triggerBotTurnIfNeeded(); // If it's now the bot's turn, let it play
+        triggerBotTurnIfNeeded();
     }
 
-    // Handle cell clicks for pawn movement
     public void onCellClicked(int row, int col) {
         if (gameState.isGameOver()) return;
         if (wallMode) return;
-        if (botThinking) return; // Block input while bot computes
+        if (botThinking) return;
 
         Position target = new Position(row, col);
-        Player current = gameState.getCurrentPlayer();
-
+        Player current  = gameState.getCurrentPlayer();
         List<Position> validMoves = MoveValidator.getValidMoves(gameState, current);
 
-        if (validMoves.contains(target)) {
-            current.setPosition(target);
-            gameState.checkWinCondition();
-
-            if (gameState.isGameOver()) {
-                stopTimer();
-                showWinner();
-            } else {
-                gameState.nextTurn();
-                startTimer();
-                triggerBotTurnIfNeeded(); // Let the bot play if it's their turn
-            }
-
-            boardView.update();
-            updateUI();
-            statusLabel.setText("");
-        } else {
+        if (!validMoves.contains(target)) {
             statusLabel.setText("Invalid move! Click a green cell.");
+            return;
         }
+
+        current.setPosition(target);
+        gameState.checkWinCondition();
+
+        if (gameState.isGameOver()) {
+            stopTimer();
+            showWinner();
+        } else {
+            gameState.nextTurn();
+            startTimer();
+            triggerBotTurnIfNeeded();
+        }
+
+        boardView.update();
+        updateUI();
+        statusLabel.setText("");
     }
 
-    // Handle wall slot clicks (two-click placement)
+    // two-click wall placement: first click selects, second click confirms
     public void onWallSlotClicked(int row, int col, boolean horizontal) {
         if (gameState.isGameOver()) return;
         if (!wallMode) return;
-        if (botThinking) return; // Block input while bot computes
+        if (botThinking) return;
 
-        Wall.Orientation orientation = horizontal ?
-                Wall.Orientation.HORIZONTAL : Wall.Orientation.VERTICAL;
+        Wall.Orientation orientation = horizontal ? Wall.Orientation.HORIZONTAL : Wall.Orientation.VERTICAL;
         Wall wall = new Wall(row, col, orientation);
 
-        // Second click - confirm placement
         if (wallConfirmPending && selectedWall != null && selectedWall.equals(wall)) {
+            // second click — try to place
             if (WallValidator.isValidWallPlacement(gameState, wall)) {
                 gameState.addWall(wall);
                 selectedWall = null;
@@ -744,28 +628,27 @@ public class GameController {
                 boardView.update();
                 updateUI();
                 statusLabel.setText("");
-                triggerBotTurnIfNeeded(); // Let the bot play if it's their turn
+                triggerBotTurnIfNeeded();
             } else {
-                String reason = WallValidator.getInvalidReason(gameState, wall);
-                statusLabel.setText("Can't place wall: " + reason);
+                statusLabel.setText("Can't place wall: " + WallValidator.getInvalidReason(gameState, wall));
                 selectedWall = null;
                 wallConfirmPending = false;
                 boardView.clearSelectedWall();
             }
+            return;
+        }
+
+        // first click — select
+        if (WallValidator.isValidWallPlacement(gameState, wall)) {
+            selectedWall = wall;
+            wallConfirmPending = true;
+            boardView.showSelectedWall(wall);
+            statusLabel.setText("Click again to confirm wall placement");
         } else {
-            // First click - select wall position
-            if (WallValidator.isValidWallPlacement(gameState, wall)) {
-                selectedWall = wall;
-                wallConfirmPending = true;
-                boardView.showSelectedWall(wall);
-                statusLabel.setText("Click again to confirm wall placement");
-            } else {
-                String reason = WallValidator.getInvalidReason(gameState, wall);
-                statusLabel.setText("Can't place wall: " + reason);
-                selectedWall = null;
-                wallConfirmPending = false;
-                boardView.clearSelectedWall();
-            }
+            statusLabel.setText("Can't place wall: " + WallValidator.getInvalidReason(gameState, wall));
+            selectedWall = null;
+            wallConfirmPending = false;
+            boardView.clearSelectedWall();
         }
     }
 
@@ -810,15 +693,8 @@ public class GameController {
     }
 
     private void styleButtonActive(Button button, String color) {
-        button.setStyle(
-                "-fx-background-color: " + color + ";" +
-                "-fx-text-fill: white;" +
-                "-fx-background-radius: 5;" +
-                "-fx-border-color: white;" +
-                "-fx-border-width: 3;" +
-                "-fx-border-radius: 5;" +
-                "-fx-cursor: hand;"
-        );
+        button.setStyle("-fx-background-color: " + color + "; -fx-text-fill: white; -fx-background-radius: 5; " +
+                        "-fx-border-color: white; -fx-border-width: 3; -fx-border-radius: 5; -fx-cursor: hand;");
     }
 
     private void updateUI() {
@@ -854,15 +730,10 @@ public class GameController {
         int wallIndex = 0;
         for (HBox row : rows) {
             for (javafx.scene.Node node : row.getChildren()) {
-                if (node instanceof Rectangle) {
-                    Rectangle block = (Rectangle) node;
-                    if (wallIndex < wallsRemaining) {
-                        block.setFill(availableColor);
-                    } else {
-                        block.setFill(Color.web("#555555"));
-                    }
-                    wallIndex++;
-                }
+                if (!(node instanceof Rectangle)) continue;
+                Rectangle block = (Rectangle) node;
+                block.setFill(wallIndex < wallsRemaining ? availableColor : Color.web("#555555"));
+                wallIndex++;
             }
         }
     }
@@ -870,13 +741,9 @@ public class GameController {
     private void showWinner() {
         Player winner = gameState.getWinner();
 
-        // Track wins for MLBot vs BotBrain mode
         if (player1IsMLBot) {
-            if (winner == gameState.getPlayer(0)) {
-                mlBotWins++;
-            } else {
-                botBrainWins++;
-            }
+            if (winner == gameState.getPlayer(0)) mlBotWins++;
+            else botBrainWins++;
             if (scoreLabel != null) {
                 scoreLabel.setText("Score: MLBot " + mlBotWins + " - " + botBrainWins + " BotBrain");
             }
@@ -903,8 +770,7 @@ public class GameController {
         winnerLabel.setFont(Font.font("Arial", FontWeight.BOLD, 24));
         winnerLabel.setTextFill(Color.web("#f1c40f"));
 
-        Label messageLabel = new Label("Congratulations! " + winner.getName() +
-                                       " has reached their goal row!");
+        Label messageLabel = new Label("Congratulations! " + winner.getName() + " has reached their goal row!");
         messageLabel.setFont(Font.font("Arial", 14));
         messageLabel.setTextFill(Color.web("#95a5a6"));
 
@@ -914,35 +780,21 @@ public class GameController {
         Button nextGameButton = new Button("Next Game");
         nextGameButton.setFont(Font.font("Arial", FontWeight.BOLD, 16));
         nextGameButton.setPrefSize(150, 45);
-        nextGameButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white; " +
-                               "-fx-background-radius: 5; -fx-cursor: hand;");
-        nextGameButton.setOnMouseEntered(e ->
-            nextGameButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white; " +
-                                   "-fx-background-radius: 5; -fx-cursor: hand;"));
-        nextGameButton.setOnMouseExited(e ->
-            nextGameButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white; " +
-                                   "-fx-background-radius: 5; -fx-cursor: hand;"));
+        nextGameButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white; -fx-background-radius: 5; -fx-cursor: hand;");
+        nextGameButton.setOnMouseEntered(e -> nextGameButton.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white; -fx-background-radius: 5; -fx-cursor: hand;"));
+        nextGameButton.setOnMouseExited(e  -> nextGameButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white; -fx-background-radius: 5; -fx-cursor: hand;"));
         nextGameButton.setOnAction(e -> {
             dialog.close();
-            // Defer restart to avoid nested showAndWait() (dialog inside dialog)
-            Platform.runLater(() -> restart());
+            Platform.runLater(this::restart); // defer to avoid nested showAndWait
         });
 
         Button quitButton = new Button("Quit");
         quitButton.setFont(Font.font("Arial", FontWeight.BOLD, 16));
         quitButton.setPrefSize(150, 45);
-        quitButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; " +
-                           "-fx-background-radius: 5; -fx-cursor: hand;");
-        quitButton.setOnMouseEntered(e ->
-            quitButton.setStyle("-fx-background-color: #c0392b; -fx-text-fill: white; " +
-                               "-fx-background-radius: 5; -fx-cursor: hand;"));
-        quitButton.setOnMouseExited(e ->
-            quitButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; " +
-                               "-fx-background-radius: 5; -fx-cursor: hand;"));
-        quitButton.setOnAction(e -> {
-            dialog.close();
-            primaryStage.close();
-        });
+        quitButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-background-radius: 5; -fx-cursor: hand;");
+        quitButton.setOnMouseEntered(e -> quitButton.setStyle("-fx-background-color: #c0392b; -fx-text-fill: white; -fx-background-radius: 5; -fx-cursor: hand;"));
+        quitButton.setOnMouseExited(e  -> quitButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-background-radius: 5; -fx-cursor: hand;"));
+        quitButton.setOnAction(e -> { dialog.close(); primaryStage.close(); });
 
         buttonBox.getChildren().addAll(nextGameButton, quitButton);
         container.getChildren().addAll(titleLabel, winnerLabel, messageLabel, buttonBox);
@@ -955,12 +807,8 @@ public class GameController {
 
     private void restart() {
         try {
-            // Invalidate any in-flight bot computations from the previous game
             gameGeneration++;
-            if (pendingBotDelay != null) {
-                pendingBotDelay.stop();
-                pendingBotDelay = null;
-            }
+            if (pendingBotDelay != null) { pendingBotDelay.stop(); pendingBotDelay = null; }
             stopTimer();
 
             showPlayerNameDialog();
@@ -968,50 +816,29 @@ public class GameController {
             gameState.getPlayer(0).setName(player1Name);
             gameState.getPlayer(1).setName(player2Name);
 
-            // Re-initialize or remove bots based on dialog choice
+            // re-initialize bots based on dialog selection
             if (player1IsBot && player2IsBot) {
                 if (player1IsMLBot) {
-                    // MLBot vs BotBrain mode
-                    try {
-                        mlBot = new MLBot("models", "best-model");
-                    } catch (Exception ex) {
-                        System.err.println("Failed to load MLBot: " + ex.getMessage());
-                        mlBot = null;
-                    }
-                    botBrain = new BotBrain(6);
-                    botBrain.setSilent(true);
+                    mlBot    = loadMLBot();
+                    botBrain = new BotBrain(6); botBrain.setSilent(true);
                     botBrain1 = null;
                 } else {
-                    // Bot vs Bot: random openings for varied games
-                    botBrain  = new BotBrain(6);
-                    botBrain1 = new BotBrain(6);
-                    botBrain.setSilent(true);
-                    botBrain1.setSilent(true);
+                    botBrain  = new BotBrain(6); botBrain.setSilent(true);
+                    botBrain1 = new BotBrain(6); botBrain1.setSilent(true);
                     mlBot = null;
                 }
             } else if (player2IsBot) {
                 if (player2IsMLBot) {
-                    // Human vs MLBot mode
-                    try {
-                        mlBot = new MLBot("models", "best-model");
-                    } catch (Exception ex) {
-                        System.err.println("Failed to load MLBot: " + ex.getMessage());
-                        mlBot = null;
-                    }
-                    botBrain = null;
+                    mlBot = loadMLBot(); botBrain = null;
                 } else {
-                    // Human vs BotBrain mode
-                    botBrain = new BotBrain();
-                    botBrain.setSilent(true);
-                    mlBot = null;
+                    botBrain = new BotBrain(); botBrain.setSilent(true); mlBot = null;
                 }
                 botBrain1 = null;
             } else {
-                botBrain = null;
-                botBrain1 = null;
-                mlBot = null;
+                botBrain = null; botBrain1 = null; mlBot = null;
             }
-            botThinking = false;
+
+            botThinking    = false;
             botVsBotPaused = false;
 
             gameState.reset();
@@ -1020,27 +847,16 @@ public class GameController {
             wallConfirmPending = false;
             boardView.clearSelectedWall();
             updateModeButtons();
-
             rebuildPlayerPanels();
             rebuildBottomPanel();
-
             boardView.update();
             updateUI();
             statusLabel.setText("");
 
             if (player1IsBot && player2IsBot) {
                 stopTimer();
-                if (player1IsMLBot) {
-                    timerLabel.setText("🤖 MLBot (NN) vs BotBrain 🤖");
-                    timerLabel.setTextFill(Color.web("#e74c3c"));
-                } else {
-                    timerLabel.setText("🤖 Bot vs Bot");
-                    timerLabel.setTextFill(Color.web("#9b59b6"));
-                }
-                Timeline startDelay = new Timeline(new KeyFrame(Duration.millis(500), e -> {
-                    triggerBotTurnIfNeeded();
-                }));
-                startDelay.play();
+                setBotVsBotTimerLabel();
+                new Timeline(new KeyFrame(Duration.millis(500), e -> triggerBotTurnIfNeeded())).play();
             } else {
                 startTimer();
             }
@@ -1052,33 +868,27 @@ public class GameController {
 
     private void rebuildPlayerPanels() {
         BorderPane root = (BorderPane) primaryStage.getScene().getRoot();
-        player1Panel = createPlayerPanel(0);
-        root.setLeft(player1Panel);
-        player2Panel = createPlayerPanel(1);
-        root.setRight(player2Panel);
+        player1Panel = createPlayerPanel(0); root.setLeft(player1Panel);
+        player2Panel = createPlayerPanel(1); root.setRight(player2Panel);
     }
 
     private void rebuildBottomPanel() {
         BorderPane root = (BorderPane) primaryStage.getScene().getRoot();
-        HBox bottomPanel = createBottomPanel();
-        root.setBottom(bottomPanel);
+        root.setBottom(createBottomPanel());
     }
-
-    // Bot vs bot controls
 
     private void toggleBotVsBotPause() {
         botVsBotPaused = !botVsBotPaused;
-        if (pauseButton != null) {
-            if (botVsBotPaused) {
-                pauseButton.setText("▶ Play");
-                statusLabel.setText("⏸ Paused - click Play to continue");
-                statusLabel.setTextFill(Color.web("#f39c12"));
-            } else {
-                pauseButton.setText("⏸ Pause");
-                statusLabel.setText("");
-                // Resume by triggering next bot turn
-                triggerBotTurnIfNeeded();
-            }
+        if (pauseButton == null) return;
+
+        if (botVsBotPaused) {
+            pauseButton.setText("▶ Play");
+            statusLabel.setText("⏸ Paused - click Play to continue");
+            statusLabel.setTextFill(Color.web("#f39c12"));
+        } else {
+            pauseButton.setText("⏸ Pause");
+            statusLabel.setText("");
+            triggerBotTurnIfNeeded();
         }
     }
 
@@ -1089,71 +899,42 @@ public class GameController {
         }
     }
 
-    // Bot integration
-
-    /**
-     * Checks if the current turn belongs to the bot and triggers its move.
-     *
-     * The bot runs in a BACKGROUND THREAD to avoid freezing the UI while
-     * it computes. A small delay (0.8s) is added before execution so the
-     * human can see the board state before the bot plays.
-     *
-     * Flow:
-     *   1. Check if current player is the bot (player index 1)
-     *   2. Show "thinking" status
-     *   3. Run BotBrain.computeBestAction() in a background thread
-     *   4. When done, use Platform.runLater() to apply the action on the JavaFX thread
-     */
+    // checks whose turn it is and schedules the bot's move on a background thread
     private void triggerBotTurnIfNeeded() {
         if (gameState.isGameOver()) return;
         if (botVsBotPaused) return;
 
         int currentIdx = gameState.getCurrentPlayerIndex();
 
-        // Determine which brain to use: MLBot or BotBrain depending on mode
         boolean useMLBot = (currentIdx == 0 && player1IsMLBot && mlBot != null)
                         || (currentIdx == 1 && player2IsMLBot && mlBot != null);
+
         BotBrain activeBrain = null;
         if (!useMLBot) {
-            if (currentIdx == 0 && player1IsBot && botBrain1 != null) {
-                activeBrain = botBrain1;
-            } else if (currentIdx == 1 && player2IsBot && !player2IsMLBot && botBrain != null) {
-                activeBrain = botBrain;
-            }
+            if (currentIdx == 0 && player1IsBot && botBrain1 != null) activeBrain = botBrain1;
+            else if (currentIdx == 1 && player2IsBot && !player2IsMLBot && botBrain != null) activeBrain = botBrain;
         }
 
         if (activeBrain == null && !useMLBot) return;
 
         botThinking = true;
-        stopTimer(); // Don't tick timer while bot thinks
+        stopTimer();
 
         String botName = gameState.getCurrentPlayer().getName();
         boolean isBotVsBot = player1IsBot && player2IsBot;
-
-        if (isBotVsBot) {
-            statusLabel.setText(botName + " is thinking...");
-        } else {
-            statusLabel.setText("Bot is thinking...");
-        }
+        statusLabel.setText(isBotVsBot ? (botName + " is thinking...") : "Bot is thinking...");
         statusLabel.setTextFill(Color.web("#e67e22"));
 
-        // Delay: shorter for bot vs bot, longer for human vs bot
         int delayMs = isBotVsBot ? botVsBotDelayMs : 800;
         final BotBrain brainToUse = activeBrain;
         final boolean useML = useMLBot;
-        final int expectedGeneration = gameGeneration; // Capture current generation
+        final int expectedGeneration = gameGeneration;
 
-        // Cancel any pending bot delay from previous turn
-        if (pendingBotDelay != null) {
-            pendingBotDelay.stop();
-        }
+        if (pendingBotDelay != null) pendingBotDelay.stop();
 
         pendingBotDelay = new Timeline(new KeyFrame(Duration.millis(delayMs), e -> {
-
-            // Check if game was restarted while waiting
             if (expectedGeneration != gameGeneration) return;
 
-            // Run bot computation in a background thread to keep UI responsive
             Thread botThread = new Thread(() -> {
                 if (useML) {
                     MLBot.Action mlAction = mlBot.computeBestAction(gameState);
@@ -1169,110 +950,74 @@ public class GameController {
                     });
                 }
             });
-            botThread.setDaemon(true); // Thread dies when app closes
+            botThread.setDaemon(true);
             botThread.start();
         }));
         pendingBotDelay.play();
     }
 
-    /**
-     * Executes the bot's chosen action on the game state.
-     *
-     * This runs on the JavaFX thread (via Platform.runLater) so it's safe
-     * to modify UI elements and game state here.
-     */
+    // runs on the JavaFX thread — safe to touch game state and UI
     private void executeBotAction(BotBrain.BotAction action) {
         try {
-        String botName = gameState.getCurrentPlayer().getName();
+            String botName = gameState.getCurrentPlayer().getName();
 
-        if (action == null) {
-            statusLabel.setText(botName + " couldn't decide, turn skipped");
-            gameState.nextTurn();
-            botThinking = false;
-            boardView.update();
-            updateUI();
-            startTimer();
-            triggerBotTurnIfNeeded(); // Next bot's turn in Bot vs Bot
-            return;
-        }
-
-        if (action.type == BotBrain.BotAction.Type.MOVE) {
-            Player bot = gameState.getCurrentPlayer();
-            bot.setPosition(action.moveTarget);
-            statusLabel.setText(botName + " moved to " + action.moveTarget);
-            statusLabel.setTextFill(Color.web("#2ecc71"));
-
-            gameState.checkWinCondition();
-            if (gameState.isGameOver()) {
-                botThinking = false;
-                stopTimer();
-                boardView.update();
-                updateUI();
-                showWinner();
+            if (action == null) {
+                statusLabel.setText(botName + " couldn't decide, turn skipped");
+                advanceTurn();
                 return;
             }
 
-        } else if (action.type == BotBrain.BotAction.Type.WALL) {
-            Wall wall = action.wallToPlace;
-            if (WallValidator.isValidWallPlacement(gameState, wall)) {
-                gameState.addWall(wall);
-                String orientStr = wall.isHorizontal() ? "horizontal" : "vertical";
-                statusLabel.setText(botName + " placed " + orientStr + " wall at ("
-                                   + wall.getRow() + "," + wall.getCol() + ")");
-                statusLabel.setTextFill(Color.web("#e67e22"));
-            } else {
-                statusLabel.setText(botName + " wall was invalid, turn skipped");
-            }
-        }
+            if (action.type == BotBrain.BotAction.Type.MOVE) {
+                gameState.getCurrentPlayer().setPosition(action.moveTarget);
+                statusLabel.setText(botName + " moved to " + action.moveTarget);
+                statusLabel.setTextFill(Color.web("#2ecc71"));
 
-        // Advance to next turn
-        gameState.nextTurn();
-        botThinking = false;
-        wallMode = false;
-        updateModeButtons();
-        boardView.update();
-        updateUI();
-        startTimer();
-        triggerBotTurnIfNeeded(); // Chain to next bot in Bot vs Bot
+                gameState.checkWinCondition();
+                if (gameState.isGameOver()) {
+                    botThinking = false; stopTimer(); boardView.update(); updateUI(); showWinner();
+                    return;
+                }
+
+            } else if (action.type == BotBrain.BotAction.Type.WALL) {
+                Wall wall = action.wallToPlace;
+                if (WallValidator.isValidWallPlacement(gameState, wall)) {
+                    gameState.addWall(wall);
+                    String orientStr = wall.isHorizontal() ? "horizontal" : "vertical";
+                    statusLabel.setText(botName + " placed " + orientStr + " wall at ("
+                                       + wall.getRow() + "," + wall.getCol() + ")");
+                    statusLabel.setTextFill(Color.web("#e67e22"));
+                } else {
+                    statusLabel.setText(botName + " wall was invalid, turn skipped");
+                }
+            }
+
+            advanceTurn();
         } catch (Exception ex) {
-            System.err.println("Bot action error: " + ex.getClass().getName() + ": " + ex.getMessage());
+            System.err.println("Bot action error: " + ex.getMessage());
             ex.printStackTrace();
             botThinking = false;
         }
     }
 
-    /**
-     * Executes the MLBot's chosen action (pure-Java NN) on the game state.
-     */
     private void executeMLBotAction(MLBot.Action action) {
         try {
             String botName = gameState.getCurrentPlayer().getName();
 
             if (action == null) {
                 statusLabel.setText(botName + " couldn't decide, turn skipped");
-                gameState.nextTurn();
-                botThinking = false;
-                boardView.update();
-                updateUI();
-                startTimer();
-                triggerBotTurnIfNeeded();
+                advanceTurn();
                 return;
             }
 
             if (action.type == MLBot.Action.Type.MOVE) {
-                Player bot = gameState.getCurrentPlayer();
-                bot.setPosition(action.moveTarget);
+                gameState.getCurrentPlayer().setPosition(action.moveTarget);
                 statusLabel.setText(botName + " moved to " + action.moveTarget
                         + " (NN: " + String.format("%.3f", action.score) + ")");
                 statusLabel.setTextFill(Color.web("#e74c3c"));
 
                 gameState.checkWinCondition();
                 if (gameState.isGameOver()) {
-                    botThinking = false;
-                    stopTimer();
-                    boardView.update();
-                    updateUI();
-                    showWinner();
+                    botThinking = false; stopTimer(); boardView.update(); updateUI(); showWinner();
                     return;
                 }
 
@@ -1290,19 +1035,23 @@ public class GameController {
                 }
             }
 
-            gameState.nextTurn();
-            botThinking = false;
-            wallMode = false;
-            updateModeButtons();
-            boardView.update();
-            updateUI();
-            startTimer();
-            triggerBotTurnIfNeeded();
+            advanceTurn();
         } catch (Exception ex) {
-            System.err.println("[MLBOT ACTION ERROR] " + ex.getClass().getName() + ": " + ex.getMessage());
+            System.err.println("[MLBOT ACTION ERROR] " + ex.getMessage());
             ex.printStackTrace();
             botThinking = false;
         }
     }
 
+    // shared post-action cleanup — advance turn, refresh UI, chain next bot move
+    private void advanceTurn() {
+        gameState.nextTurn();
+        botThinking = false;
+        wallMode = false;
+        updateModeButtons();
+        boardView.update();
+        updateUI();
+        startTimer();
+        triggerBotTurnIfNeeded();
+    }
 }
