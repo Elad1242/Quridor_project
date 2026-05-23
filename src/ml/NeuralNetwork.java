@@ -4,18 +4,20 @@ package ml;
 import java.io.*;
 import java.util.Random;
 
-// Feedforward NN written from scratch. ReLU hidden layers, sigmoid output, MSE loss.
+// רשת נוירונים feedforward שנכתבה מאפס.
+// ארכיטקטורה: 27 → 64 → 32 → 16 → 1
+// שכבות נסתרות עם ReLU, שכבת פלט עם sigmoid, פונקציית שגיאה MSE.
 public class NeuralNetwork {
 
     private final int[] layerSizes;
-    private final int numLayers; // number of weight layers = layerSizes.length - 1
+    private final int numLayers; // מספר שכבות המשקלים = מספר השכבות פחות אחת
 
-    // weights[L][j][i] = weight from neuron i in layer L to neuron j in layer L+1
+    // weights[L][j][i] — משקל מנוירון i בשכבה L לנוירון j בשכבה L+1
     private double[][][] weights;
-    // biases[L][j] = bias for neuron j in layer L+1
+    // biases[L][j] — הטיה של נוירון j בשכבה L+1
     private double[][] biases;
 
-    // SGD momentum velocities
+    // וקטורי המהירות לאלגוריתם המומנטום (זוכרים את כיוון העדכון הקודם)
     private double[][][] velocityW;
     private double[][] velocityB;
 
@@ -36,25 +38,26 @@ public class NeuralNetwork {
             velocityW[L] = new double[fanOut][fanIn];
             velocityB[L] = new double[fanOut];
 
-            // He initialization — good for ReLU
+            // אתחול He: סטיית תקן של sqrt(2/fanIn) — מתאים במיוחד לReLU
+            // מונע שהגרדיאנטים יתאפסו או יתפוצצו בשכבות העמוקות
             double stddev = Math.sqrt(2.0 / fanIn);
             for (int j = 0; j < fanOut; j++) {
                 for (int i = 0; i < fanIn; i++) {
                     weights[L][j][i] = rng.nextGaussian() * stddev;
                 }
-                biases[L][j] = 0.01; // small positive bias so ReLU units start active
+                biases[L][j] = 0.01; // הטיה חיובית קטנה כדי שנוירוני ReLU יתחילו פעילים
             }
         }
     }
 
-    // --- forward pass ---
+    // --- העברה קדימה ---
 
-    // returns output + intermediate values needed for backprop
+    // מחשב את הפלט של הרשת ושומר ערכי ביניים הנחוצים לbackprop
     public ForwardResult forward(double[] input) {
         double[][] activations    = new double[numLayers + 1][];
         double[][] preActivations = new double[numLayers][];
 
-        activations[0] = input;
+        activations[0] = input; // שכבת הכניסה היא הפיצ'רים עצמם
 
         for (int L = 0; L < numLayers; L++) {
             int outSize = layerSizes[L + 1];
@@ -63,13 +66,15 @@ public class NeuralNetwork {
             activations[L + 1]   = new double[outSize];
 
             for (int j = 0; j < outSize; j++) {
+                // סכום משוקלל: bias + סיגמא(weight * activation)
                 double sum = biases[L][j];
                 for (int i = 0; i < inSize; i++) {
                     sum += weights[L][j][i] * activations[L][i];
                 }
-                preActivations[L][j] = sum;
+                preActivations[L][j] = sum; // שומרים לפני הפעלה — נחוץ לגזירה בbackprop
 
-                // ReLU for hidden layers, sigmoid for output
+                // שכבות נסתרות: ReLU — מאפס ערכים שליליים
+                // שכבת פלט: sigmoid — מוציאה הסתברות בין 0 ל-1
                 if (L < numLayers - 1) {
                     activations[L + 1][j] = Math.max(0, sum);
                 } else {
@@ -81,45 +86,48 @@ public class NeuralNetwork {
         return new ForwardResult(activations, preActivations);
     }
 
+    // חיזוי בלבד — משמש בזמן משחק (לא שומר ערכי ביניים)
     public double predict(double[] input) {
         return forward(input).getOutput()[0];
     }
 
-    // --- backprop ---
+    // --- backpropagation ---
 
-    // computes gradients for one sample; doesn't apply them (caller accumulates)
+    // מחשב גרדיאנטים עבור דגימה אחת — לא מעדכן משקלים (הקורא צובר ומעדכן בסוף הbatch)
     public Gradients backprop(double[] input, double target) {
-        ForwardResult fwd     = forward(input);
+        ForwardResult fwd         = forward(input);
         double[][] activations    = fwd.activations;
         double[][] preActivations = fwd.preActivations;
 
-        double[][][] dW     = new double[numLayers][][];
-        double[][] dB       = new double[numLayers][];
-        double[][] deltas   = new double[numLayers][];
+        double[][][] dW   = new double[numLayers][][];
+        double[][] dB     = new double[numLayers][];
+        double[][] deltas = new double[numLayers][];
 
-        // output layer delta
+        // שכבת הפלט: delta = שגיאה × נגזרת sigmoid
+        // נגזרת sigmoid(x) = sigmoid(x) * (1 - sigmoid(x))
         int lastL        = numLayers - 1;
         double predicted = activations[numLayers][0];
         double error     = predicted - target;
         deltas[lastL]    = new double[]{error * predicted * (1 - predicted)};
 
-        // hidden layer deltas (backward pass)
+        // מעבר אחורה בשכבות הנסתרות: כל delta מחושב מהשכבה שאחריו
         for (int L = lastL - 1; L >= 0; L--) {
             int size     = layerSizes[L + 1];
             int nextSize = layerSizes[L + 2];
             deltas[L]    = new double[size];
 
             for (int j = 0; j < size; j++) {
+                // חיבור הדלתות מהשכבה הבאה, משוקלל לפי המשקלים
                 double sum = 0;
                 for (int k = 0; k < nextSize; k++) {
                     sum += weights[L + 1][k][j] * deltas[L + 1][k];
                 }
-                // ReLU derivative: 1 if pre-activation > 0, else 0
+                // נגזרת ReLU: 1 אם הקלט היה חיובי, 0 אחרת
                 deltas[L][j] = sum * (preActivations[L][j] > 0 ? 1.0 : 0.0);
             }
         }
 
-        // build gradient arrays
+        // בניית מערכי הגרדיאנטים: dW = delta × activation, dB = delta
         for (int L = 0; L < numLayers; L++) {
             int outSize = layerSizes[L + 1];
             int inSize  = layerSizes[L];
@@ -134,11 +142,11 @@ public class NeuralNetwork {
             }
         }
 
-        double loss = 0.5 * error * error; // MSE for a single sample
+        double loss = 0.5 * error * error; // שגיאה ריבועית לדגימה אחת (MSE)
         return new Gradients(dW, dB, loss);
     }
 
-    // applies accumulated gradients from a mini-batch
+    // עדכון המשקלים בסוף כל batch — ממצע את הגרדיאנטים ומפעיל מומנטום
     public void updateWeights(double[][][] gradW, double[][] gradB, int batchSize,
                                double learningRate, double momentum, double weightDecay) {
         for (int L = 0; L < numLayers; L++) {
@@ -146,11 +154,13 @@ public class NeuralNetwork {
             int inSize  = layerSizes[L];
 
             for (int j = 0; j < outSize; j++) {
+                // מומנטום: שמור חלק מהכיוון הקודם כדי להאיץ ולייצב את הלמידה
                 velocityB[L][j] = momentum * velocityB[L][j]
                         - learningRate * (gradB[L][j] / batchSize);
                 biases[L][j] += velocityB[L][j];
 
                 for (int i = 0; i < inSize; i++) {
+                    // weightDecay מונע overfitting על ידי עונש על משקלים גדולים
                     velocityW[L][j][i] = momentum * velocityW[L][j][i]
                             - learningRate * (gradW[L][j][i] / batchSize + weightDecay * weights[L][j][i]);
                     weights[L][j][i] += velocityW[L][j][i];
