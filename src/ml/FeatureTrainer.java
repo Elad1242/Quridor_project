@@ -58,7 +58,8 @@ public class FeatureTrainer {
 
         long startTime = System.currentTimeMillis();
 
-        for (int epoch = 0; epoch < maxEpochs; epoch++) {
+        boolean earlyStop = false;
+        for (int epoch = 0; epoch < maxEpochs && !earlyStop; epoch++) {
             // shuffle training data each epoch
             for (int i = trainSize - 1; i > 0; i--) {
                 int j = rng.nextInt(i + 1);
@@ -104,45 +105,39 @@ public class FeatureTrainer {
             trainLoss /= batches;
 
             // validate every 5 epochs
-            if (epoch % 5 != 0 && epoch != maxEpochs - 1) continue;
+            if (epoch % 5 == 0 || epoch == maxEpochs - 1) {
+                double valLoss = 0;
+                int correct = 0;
+                for (int i = 0; i < valX.length; i++) {
+                    double pred = nn.predict(valX[i]);
+                    double err  = pred - valY[i];
+                    valLoss += 0.5 * err * err;
+                    if ((pred > 0.5) == (valY[i] > 0.5)) correct++;
+                }
+                valLoss /= valX.length;
+                double valAcc = 100.0 * correct / valX.length;
 
-            double valLoss = 0;
-            int correct = 0;
-            for (int i = 0; i < valX.length; i++) {
-                double pred = nn.predict(valX[i]);
-                double err  = pred - valY[i];
-                valLoss += 0.5 * err * err;
-                if ((pred > 0.5) == (valY[i] > 0.5)) correct++;
-            }
-            valLoss /= valX.length;
-            double valAcc = 100.0 * correct / valX.length;
+                long elapsed = (System.currentTimeMillis() - startTime) / 1000;
+                System.out.println("Epoch " + (epoch + 1) + "/" + maxEpochs
+                        + " (" + elapsed + "s) loss=" + trainLoss
+                        + " valLoss=" + valLoss + " acc=" + valAcc + "%");
 
-            long elapsed = (System.currentTimeMillis() - startTime) / 1000;
-            System.out.println("Epoch " + (epoch + 1) + "/" + maxEpochs
-                    + " (" + elapsed + "s) loss=" + trainLoss
-                    + " valLoss=" + valLoss + " acc=" + valAcc + "%");
-
-            if (valLoss < bestValLoss) {
-                bestValLoss = valLoss;
-                noImproveCount = 0;
-                nn.save(modelPath);
-                System.out.println("  >> best model saved (valLoss=" + bestValLoss + ")");
-                continue;
-            }
-
-            noImproveCount += 5;
-
-            // reduce lr when stuck
-            if (noImproveCount >= patience / 2 && lr > 1e-5) {
-                lr *= 0.5;
-                System.out.println("  >> lr reduced to " + lr);
-                noImproveCount = 0;
-                continue;
-            }
-
-            if (noImproveCount >= patience) {
-                System.out.println("  >> early stopping!");
-                break;
+                if (valLoss < bestValLoss) {
+                    bestValLoss = valLoss;
+                    noImproveCount = 0;
+                    nn.save(modelPath);
+                    System.out.println("  >> best model saved (valLoss=" + bestValLoss + ")");
+                } else {
+                    noImproveCount += 5;
+                    if (noImproveCount >= patience / 2 && lr > 1e-5) {
+                        lr *= 0.5;
+                        System.out.println("  >> lr reduced to " + lr);
+                        noImproveCount = 0;
+                    } else if (noImproveCount >= patience) {
+                        System.out.println("  >> early stopping!");
+                        earlyStop = true;
+                    }
+                }
             }
         }
 
