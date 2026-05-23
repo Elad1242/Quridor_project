@@ -63,7 +63,6 @@ public class FeatureEvalHarness {
                     }
                 }
 
-                if (!running) break;
                 state.checkWinCondition();
                 if (!state.isGameOver()) state.nextTurn();
                 turns++;

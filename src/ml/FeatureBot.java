@@ -69,20 +69,19 @@ public class FeatureBot {
                         Wall.Orientation o = (orient == 0)
                                 ? Wall.Orientation.HORIZONTAL : Wall.Orientation.VERTICAL;
                         Wall wall = new Wall(r, c, o);
-                        if (!WallValidator.isValidWallPlacement(state, wall)) continue;
+                        if (WallValidator.isValidWallPlacement(state, wall)) {
 
                         int oppAfter = PathFinder.aStarWithWall(state, opp, wall);
                         int myAfter  = PathFinder.aStarWithWall(state, me,  wall);
 
                         // quick filter: skip walls that don't help or hurt us too much
-                        if (oppAfter < 0 || myAfter < 0) continue;
-                        if (oppAfter <= oppDist) continue;
-                        if (myAfter - myDist >= 3) continue;
-
+                        if (oppAfter >= 0 && myAfter >= 0 && oppAfter > oppDist && myAfter - myDist < 3) {
                         double[] features = GameFeatures.extractForWall(state, wall);
                         double score = nn.predict(features);
                         candidates.add(new Action(Action.Type.WALL, null, wall, score));
                         if (score > bestScore) bestScore = score;
+                        }
+                        }
                     }
                 }
             }
@@ -110,17 +109,19 @@ public class FeatureBot {
                     Wall.Orientation o = (orient == 0)
                             ? Wall.Orientation.HORIZONTAL : Wall.Orientation.VERTICAL;
                     Wall wall = new Wall(r, c, o);
-                    if (!WallValidator.isValidWallPlacement(state, wall)) continue;
+                    if (WallValidator.isValidWallPlacement(state, wall)) {
 
                     int oppAfter = PathFinder.aStarWithWall(state, opp, wall);
                     int myAfter  = PathFinder.aStarWithWall(state, me,  wall);
-                    if (oppAfter < 0 || myAfter < 0) continue;
+                    if (oppAfter >= 0 && myAfter >= 0) {
 
                     double[] features = GameFeatures.extractForWall(state, wall);
                     double score = nn.predict(features);
                     if (score > bestScore) {
                         bestScore = score;
                         bestWall = new Action(Action.Type.WALL, null, wall, score);
+                    }
+                    }
                     }
                 }
             }

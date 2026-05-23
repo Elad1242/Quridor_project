@@ -42,10 +42,10 @@ public class FlowCalculator {
 
                 for (int[] dir : DIRECTIONS) {
                     Position to = from.move(dir[0], dir[1]);
-                    if (!to.isValid()) continue;
-                    if (state.isBlocked(from, to)) continue;
-                    if (extraWall != null && extraWall.blocksMove(from, to)) continue;
-                    capacity[fromIdx][posToIndex(to)] = 1;
+                    if (to.isValid() && !state.isBlocked(from, to)
+                            && !(extraWall != null && extraWall.blocksMove(from, to))) {
+                        capacity[fromIdx][posToIndex(to)] = 1;
+                    }
                 }
             }
         }

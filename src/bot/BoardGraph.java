@@ -43,10 +43,10 @@ public class BoardGraph {
 
                 for (int[] dir : DIRECTIONS) {
                     Position to = from.move(dir[0], dir[1]);
-                    if (!to.isValid() || state.isBlocked(from, to)) continue;
-
-                    double weight = calculateEdgeWeight(to, opponentWalls, opponentPos);
-                    adjacency.computeIfAbsent(from, k -> new HashMap<>()).put(to, weight);
+                    if (to.isValid() && !state.isBlocked(from, to)) {
+                        double weight = calculateEdgeWeight(to, opponentWalls, opponentPos);
+                        adjacency.computeIfAbsent(from, k -> new HashMap<>()).put(to, weight);
+                    }
                 }
             }
         }

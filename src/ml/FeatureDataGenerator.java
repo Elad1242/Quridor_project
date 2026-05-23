@@ -97,10 +97,11 @@ public class FeatureDataGenerator {
                 applyOpponentAction(state, opponent);
             }
 
-            if (!running) break;
+            if (running) {
             state.checkWinCondition();
             if (!state.isGameOver()) state.nextTurn();
             turns++;
+            }
         }
     }
 
@@ -165,8 +166,9 @@ public class FeatureDataGenerator {
 
         List<Position> moves = MoveValidator.getValidMoves(state, me);
         for (Position p : moves) {
-            if (chosen.type == BotBrain.BotAction.Type.MOVE && p.equals(chosen.moveTarget)) continue;
-            candidates.add(p);
+            if (!(chosen.type == BotBrain.BotAction.Type.MOVE && p.equals(chosen.moveTarget))) {
+                candidates.add(p);
+            }
         }
 
         if (me.getWallsRemaining() > 0) {
@@ -177,13 +179,15 @@ public class FeatureDataGenerator {
                         Wall.Orientation orient = (o == 0)
                                 ? Wall.Orientation.HORIZONTAL : Wall.Orientation.VERTICAL;
                         Wall w = new Wall(r, c, orient);
-                        if (!WallValidator.isValidWallPlacement(state, w)) continue;
-                        if (chosen.type == BotBrain.BotAction.Type.WALL) {
-                            Wall cw = chosen.wallToPlace;
-                            if (cw.getPosition().getRow() == r && cw.getPosition().getCol() == c
-                                    && cw.getOrientation() == orient) continue;
+                        if (WallValidator.isValidWallPlacement(state, w)) {
+                            boolean isSameAsChosen = chosen.type == BotBrain.BotAction.Type.WALL
+                                    && chosen.wallToPlace.getPosition().getRow() == r
+                                    && chosen.wallToPlace.getPosition().getCol() == c
+                                    && chosen.wallToPlace.getOrientation() == orient;
+                            if (!isSameAsChosen) {
+                                walls.add(w);
+                            }
                         }
-                        walls.add(w);
                     }
                 }
             }

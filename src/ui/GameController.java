@@ -730,10 +730,11 @@ public class GameController {
         int wallIndex = 0;
         for (HBox row : rows) {
             for (javafx.scene.Node node : row.getChildren()) {
-                if (!(node instanceof Rectangle)) continue;
-                Rectangle block = (Rectangle) node;
-                block.setFill(wallIndex < wallsRemaining ? availableColor : Color.web("#555555"));
-                wallIndex++;
+                if (node instanceof Rectangle) {
+                    Rectangle block = (Rectangle) node;
+                    block.setFill(wallIndex < wallsRemaining ? availableColor : Color.web("#555555"));
+                    wallIndex++;
+                }
             }
         }
     }

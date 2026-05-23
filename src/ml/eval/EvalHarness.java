@@ -60,8 +60,7 @@ public class EvalHarness {
 
             if (o == Outcome.DRAW) {
                 r.draws++;
-                continue;
-            }
+            } else {
 
             r.played++;
             boolean aWon = (o == Outcome.P1_WIN) == aIsP1;
@@ -74,6 +73,7 @@ public class EvalHarness {
                 r.aAsP2Played++;
                 if (aWon) { r.aWins++; r.aAsP2Wins++; }
                 else      { r.bWins++; }
+            }
             }
 
             if ((g + 1) % 50 == 0) {

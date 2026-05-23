@@ -60,13 +60,13 @@ public class WallEvaluator {
             for (int col = 0; col < 8; col++) {
                 for (Wall.Orientation orient : Wall.Orientation.values()) {
                     Wall candidate = new Wall(row, col, orient);
-                    if (!WallValidator.isValidWallPlacement(state, candidate)) continue;
+                    if (WallValidator.isValidWallPlacement(state, candidate)) {
+                        double score = scoreWall(state, candidate, bot, opponent,
+                                                 botPath, opponentPath, onOpponentPath, emergency);
 
-                    double score = scoreWall(state, candidate, bot, opponent,
-                                             botPath, opponentPath, onOpponentPath, emergency);
-
-                    if (score > 0 && (bestWall == null || score > bestWall.score)) {
-                        bestWall = new ScoredWall(candidate, score);
+                        if (score > 0 && (bestWall == null || score > bestWall.score)) {
+                            bestWall = new ScoredWall(candidate, score);
+                        }
                     }
                 }
             }

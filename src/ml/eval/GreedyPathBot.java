@@ -37,7 +37,7 @@ public final class GreedyPathBot {
             int dist = PathFinder.aStarShortestPath(state, me);
             me.setPosition(original);
 
-            if (dist < 0) continue; // unreachable — shouldn't happen on a valid board
+            if (dist >= 0) { // reachable — process this move
 
             int advance = (p.getRow() - curRow) * forwardDir; // positive = toward goal
 
@@ -50,6 +50,7 @@ public final class GreedyPathBot {
                 bestDist    = dist;
                 bestAdvance = advance;
                 bestCol     = p.getCol();
+            }
             }
         }
 

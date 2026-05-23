@@ -25,12 +25,12 @@ public class MoveValidator {
 
         for (int[] dir : directions) {
             Position next = current.move(dir[0], dir[1]);
-            if (!next.isValid() || state.isBlocked(current, next)) continue;
-
-            if (next.equals(opponent)) {
-                handleJumpMoves(state, validMoves, next, dir[0], dir[1]);
-            } else {
-                validMoves.add(next);
+            if (next.isValid() && !state.isBlocked(current, next)) {
+                if (next.equals(opponent)) {
+                    handleJumpMoves(state, validMoves, next, dir[0], dir[1]);
+                } else {
+                    validMoves.add(next);
+                }
             }
         }
 

@@ -36,10 +36,11 @@ public class PathFinder {
 
             for (int[] dir : DIRECTIONS) {
                 Position next = currentPos.move(dir[0], dir[1]);
-                if (!next.isValid() || visited.contains(next) || state.isBlocked(currentPos, next)) continue;
-                if (next.getRow() == goalRow) return dist + 1;
-                visited.add(next);
-                queue.add(new int[]{next.getRow(), next.getCol(), dist + 1});
+                if (next.isValid() && !visited.contains(next) && !state.isBlocked(currentPos, next)) {
+                    if (next.getRow() == goalRow) return dist + 1;
+                    visited.add(next);
+                    queue.add(new int[]{next.getRow(), next.getCol(), dist + 1});
+                }
             }
         }
 
@@ -63,10 +64,11 @@ public class PathFinder {
 
             for (int[] dir : DIRECTIONS) {
                 Position next = current.move(dir[0], dir[1]);
-                if (!next.isValid() || visited.contains(next)) continue;
-                if (state.isBlocked(current, next) || newWall.blocksMove(current, next)) continue;
-                visited.add(next);
-                queue.add(next);
+                if (next.isValid() && !visited.contains(next)
+                        && !state.isBlocked(current, next) && !newWall.blocksMove(current, next)) {
+                    visited.add(next);
+                    queue.add(next);
+                }
             }
         }
 
@@ -104,26 +106,28 @@ public class PathFinder {
             double[] current = openSet.poll();
             Position currentPos = new Position((int) current[2], (int) current[3]);
 
-            if (closedSet.contains(currentPos)) continue;
-            closedSet.add(currentPos);
+            if (!closedSet.contains(currentPos)) {
+                closedSet.add(currentPos);
 
-            if (currentPos.getRow() == goalRow) return reconstructPath(cameFrom, currentPos);
+                if (currentPos.getRow() == goalRow) return reconstructPath(cameFrom, currentPos);
 
-            double currentG = gScore.get(currentPos);
+                double currentG = gScore.get(currentPos);
 
-            for (int[] dir : DIRECTIONS) {
-                Position neighbor = currentPos.move(dir[0], dir[1]);
-                if (!neighbor.isValid() || closedSet.contains(neighbor)) continue;
-                if (state.isBlocked(currentPos, neighbor)) continue;
-                if (extraWall != null && extraWall.blocksMove(currentPos, neighbor)) continue;
+                for (int[] dir : DIRECTIONS) {
+                    Position neighbor = currentPos.move(dir[0], dir[1]);
+                    if (neighbor.isValid() && !closedSet.contains(neighbor)
+                            && !state.isBlocked(currentPos, neighbor)
+                            && !(extraWall != null && extraWall.blocksMove(currentPos, neighbor))) {
 
-                double tentativeG = currentG + 1.0;
-                if (tentativeG >= gScore.getOrDefault(neighbor, Double.MAX_VALUE)) continue;
-
-                gScore.put(neighbor, tentativeG);
-                cameFrom.put(neighbor, currentPos);
-                double f = tentativeG + heuristic(neighbor, goalRow);
-                openSet.add(new double[]{f, tentativeG, neighbor.getRow(), neighbor.getCol()});
+                        double tentativeG = currentG + 1.0;
+                        if (tentativeG < gScore.getOrDefault(neighbor, Double.MAX_VALUE)) {
+                            gScore.put(neighbor, tentativeG);
+                            cameFrom.put(neighbor, currentPos);
+                            double f = tentativeG + heuristic(neighbor, goalRow);
+                            openSet.add(new double[]{f, tentativeG, neighbor.getRow(), neighbor.getCol()});
+                        }
+                    }
+                }
             }
         }
 
@@ -160,20 +164,21 @@ public class PathFinder {
             double currentDist = current[0];
             Position currentPos = new Position((int) current[1], (int) current[2]);
 
-            if (visited.contains(currentPos)) continue;
-            visited.add(currentPos);
+            if (!visited.contains(currentPos)) {
+                visited.add(currentPos);
 
-            if (currentPos.getRow() == goalRow) return currentDist;
+                if (currentPos.getRow() == goalRow) return currentDist;
 
-            Map<Position, Double> neighbors = graph.getNeighbors(currentPos);
-            for (Map.Entry<Position, Double> entry : neighbors.entrySet()) {
-                Position neighbor = entry.getKey();
-                if (visited.contains(neighbor)) continue;
-
-                double newDist = currentDist + entry.getValue();
-                if (newDist < dist.getOrDefault(neighbor, Double.MAX_VALUE)) {
-                    dist.put(neighbor, newDist);
-                    pq.add(new double[]{newDist, neighbor.getRow(), neighbor.getCol()});
+                Map<Position, Double> neighbors = graph.getNeighbors(currentPos);
+                for (Map.Entry<Position, Double> entry : neighbors.entrySet()) {
+                    Position neighbor = entry.getKey();
+                    if (!visited.contains(neighbor)) {
+                        double newDist = currentDist + entry.getValue();
+                        if (newDist < dist.getOrDefault(neighbor, Double.MAX_VALUE)) {
+                            dist.put(neighbor, newDist);
+                            pq.add(new double[]{newDist, neighbor.getRow(), neighbor.getCol()});
+                        }
+                    }
                 }
             }
         }
